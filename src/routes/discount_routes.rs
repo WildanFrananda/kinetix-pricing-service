@@ -13,9 +13,20 @@ pub async fn create_discount(
     pool: &State<PgPool>,
     req: Json<CreateDiscountRequest>,
 ) -> Result<Json<Discount>, AppError> {
-    println!("Create discount request authorized for role: {}, user_id: {:?}", auth.role, auth.user_id);
+    if auth.role == "MERCHANT" && auth.user_id.is_none() {
+        return Err(AppError::Unauthorized);
+    }
+
+    let payload = req.into_inner();
+    if payload.value <= rust_decimal_macros::dec!(0.0) {
+        return Err(AppError::BadRequest("Discount value must be greater than zero".to_string()));
+    }
+    if payload.start_time >= payload.end_time {
+        return Err(AppError::BadRequest("Discount start_time must be before end_time".to_string()));
+    }
+
     let repo = DiscountRepository;
-    let discount = repo.create(pool.inner(), req.into_inner()).await?;
+    let discount = repo.create(pool.inner(), payload).await?;
     return Ok(Json(discount));
 }
 

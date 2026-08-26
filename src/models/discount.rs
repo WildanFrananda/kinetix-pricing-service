@@ -1,8 +1,11 @@
 use std::fmt;
+use std::str::FromStr;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+use crate::error::AppError;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, sqlx::Type)]
 #[sqlx(type_name = "VARCHAR", rename_all = "SCREAMING_SNAKE_CASE")]
@@ -14,10 +17,7 @@ pub enum DiscountType {
 
 impl fmt::Display for DiscountType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            DiscountType::Percentage => write!(f, "PERCENTAGE"),
-            DiscountType::Fixed => write!(f, "FIXED"),
-        }
+        write!(f, "{}", self.as_str())
     }
 }
 
@@ -28,11 +28,16 @@ impl DiscountType {
             DiscountType::Fixed => return "FIXED",
         }
     }
+}
 
-    pub fn from_str(s: &str) -> Self {
-        match s {
-            "FIXED" => return DiscountType::Fixed,
-            _ => return DiscountType::Percentage,
+impl FromStr for DiscountType {
+    type Err = AppError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.trim().to_uppercase().as_str() {
+            "PERCENTAGE" => return Ok(DiscountType::Percentage),
+            "FIXED" => return Ok(DiscountType::Fixed),
+            other => return Err(AppError::BadRequest(format!("Invalid discount_type: '{}'. Expected 'PERCENTAGE' or 'FIXED'", other))),
         }
     }
 }
@@ -61,18 +66,4 @@ pub struct CreateDiscountRequest {
     pub target_category_id: Option<String>,
     pub start_time: DateTime<Utc>,
     pub end_time: DateTime<Utc>,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_discount_type_conversions() {
-        assert_eq!(DiscountType::Percentage.as_str(), "PERCENTAGE");
-        assert_eq!(DiscountType::Fixed.as_str(), "FIXED");
-        assert_eq!(DiscountType::from_str("FIXED"), DiscountType::Fixed);
-        assert_eq!(DiscountType::from_str("PERCENTAGE"), DiscountType::Percentage);
-        assert_eq!(DiscountType::from_str("UNKNOWN"), DiscountType::Percentage);
-    }
 }

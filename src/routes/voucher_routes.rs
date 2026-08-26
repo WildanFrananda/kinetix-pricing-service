@@ -6,6 +6,7 @@ use crate::error::AppError;
 use crate::guards::AdminOrMerchantGuard;
 use crate::models::{ApplyVoucherRequest, CreateVoucherRequest, Voucher};
 use crate::repositories::{VoucherRepository, VoucherRepositoryPort};
+use crate::traits::{DefaultVoucherEvaluator, VoucherEvaluator};
 
 #[post("/api/v1/vouchers", data = "<req>")]
 pub async fn create_voucher(
@@ -13,9 +14,20 @@ pub async fn create_voucher(
     pool: &State<PgPool>,
     req: Json<CreateVoucherRequest>,
 ) -> Result<Json<Voucher>, AppError> {
-    println!("Create voucher request authorized for role: {}, user_id: {:?}", auth.role, auth.user_id);
+    if auth.role == "MERCHANT" && auth.user_id.is_none() {
+        return Err(AppError::Unauthorized);
+    }
+
+    let payload = req.into_inner();
+    if payload.code.trim().is_empty() {
+        return Err(AppError::BadRequest("Voucher code cannot be blank".to_string()));
+    }
+    if payload.value <= rust_decimal_macros::dec!(0.0) {
+        return Err(AppError::BadRequest("Voucher value must be greater than zero".to_string()));
+    }
+
     let repo = VoucherRepository;
-    let voucher = repo.create(pool.inner(), req.into_inner()).await?;
+    let voucher = repo.create(pool.inner(), payload).await?;
     return Ok(Json(voucher));
 }
 
@@ -26,9 +38,22 @@ pub async fn apply_voucher(
 ) -> Result<Json<Option<Voucher>>, AppError> {
     let payload = req.into_inner();
     let query_req = ApplyVoucherRequest::new(payload.code, payload.cart_subtotal);
+
+    if query_req.code.trim().is_empty() {
+        return Err(AppError::BadRequest("Voucher code cannot be blank".to_string()));
+    }
+
     let repo = VoucherRepository;
-    let voucher = repo.find_by_code(pool.inner(), &query_req.code).await?;
-    return Ok(Json(voucher));
+    let voucher_opt = repo.find_by_code(pool.inner(), &query_req.code).await?;
+
+    if let Some(ref voucher) = voucher_opt {
+        let evaluator = DefaultVoucherEvaluator;
+        if !evaluator.is_eligible(voucher, query_req.cart_subtotal) {
+            return Ok(Json(None));
+        }
+    }
+
+    return Ok(Json(voucher_opt));
 }
 
 #[get("/api/v1/vouchers/<code>")]

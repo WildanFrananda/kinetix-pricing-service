@@ -1,3 +1,4 @@
+use std::str::FromStr;
 use async_trait::async_trait;
 use chrono::Utc;
 use sqlx::PgPool;
@@ -35,7 +36,7 @@ impl DiscountRepositoryPort for DiscountRepository {
         let id = Uuid::new_v4();
         let now = Utc::now();
         let discount_type_str = req.discount_type.as_str();
-        let _verified_type = DiscountType::from_str(discount_type_str);
+        let _verified_type = DiscountType::from_str(discount_type_str)?;
 
         let record = sqlx::query_as::<_, Discount>(
             r#"

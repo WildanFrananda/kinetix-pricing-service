@@ -4,6 +4,14 @@ version = "0.1.0"
 edition = "2021"
 description = "Kinetix Pricing Service — Discounts, Vouchers, Flash Sales, and Product Pricing Engine in Rust (Rocket & Tonic gRPC)."
 
+[lib]
+name = "kinetix_pricing_service"
+path = "src/lib.rs"
+
+[[bin]]
+name = "kinetix-pricing-service"
+path = "src/main.rs"
+
 [dependencies]
 rocket = { version = "0.5.1", features = ["json"] }
 tonic = "0.11"

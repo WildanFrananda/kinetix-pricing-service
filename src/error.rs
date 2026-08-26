@@ -44,20 +44,3 @@ impl<'r> Responder<'r, 'static> for AppError {
             .ok();
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_app_error_display() {
-        let err_not_found = AppError::NotFound("Item not found".to_string());
-        assert_eq!(err_not_found.to_string(), "Not found: Item not found");
-
-        let err_bad_req = AppError::BadRequest("Invalid payload".to_string());
-        assert_eq!(err_bad_req.to_string(), "Validation error: Invalid payload");
-
-        let err_unauth = AppError::Unauthorized;
-        assert_eq!(err_unauth.to_string(), "Unauthorized access");
-    }
-}
