@@ -9,10 +9,11 @@ use crate::repositories::{FlashSaleRepository, FlashSaleRepositoryPort};
 
 #[post("/api/v1/flash-sales", data = "<req>")]
 pub async fn create_flash_sale(
-    _auth: AdminOrMerchantGuard,
+    auth: AdminOrMerchantGuard,
     pool: &State<PgPool>,
     req: Json<CreateFlashSaleRequest>,
 ) -> Result<Json<FlashSale>, AppError> {
+    println!("Create flash sale request authorized for role: {}, user_id: {:?}", auth.role, auth.user_id);
     let repo = FlashSaleRepository;
     let flash_sale = repo.create(pool.inner(), req.into_inner()).await?;
     return Ok(Json(flash_sale));

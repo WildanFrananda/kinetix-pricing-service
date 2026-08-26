@@ -4,6 +4,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::error::AppError;
+use crate::models::discount::DiscountType;
 use crate::models::{CreateDiscountRequest, Discount};
 use crate::repositories::traits::DiscountRepositoryPort;
 
@@ -33,7 +34,8 @@ impl DiscountRepositoryPort for DiscountRepository {
     async fn create(&self, pool: &PgPool, req: CreateDiscountRequest) -> Result<Discount, AppError> {
         let id = Uuid::new_v4();
         let now = Utc::now();
-        let discount_type_str = req.discount_type.to_string();
+        let discount_type_str = req.discount_type.as_str();
+        let _verified_type = DiscountType::from_str(discount_type_str);
 
         let record = sqlx::query_as::<_, Discount>(
             r#"

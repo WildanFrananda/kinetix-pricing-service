@@ -9,10 +9,11 @@ use crate::repositories::{DiscountRepository, DiscountRepositoryPort};
 
 #[post("/api/v1/discounts", data = "<req>")]
 pub async fn create_discount(
-    _auth: AdminOrMerchantGuard,
+    auth: AdminOrMerchantGuard,
     pool: &State<PgPool>,
     req: Json<CreateDiscountRequest>,
 ) -> Result<Json<Discount>, AppError> {
+    println!("Create discount request authorized for role: {}, user_id: {:?}", auth.role, auth.user_id);
     let repo = DiscountRepository;
     let discount = repo.create(pool.inner(), req.into_inner()).await?;
     return Ok(Json(discount));

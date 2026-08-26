@@ -29,13 +29,13 @@ where
 
 impl Default for PricingService<DiscountRepository, VoucherRepository, FlashSaleRepository> {
     fn default() -> Self {
-        return Self {
-            discount_repo: DiscountRepository,
-            voucher_repo: VoucherRepository,
-            flash_sale_repo: FlashSaleRepository,
-            discount_evaluator: Box::new(DefaultDiscountEvaluator),
-            voucher_evaluator: Box::new(DefaultVoucherEvaluator),
-        };
+        return Self::new(
+            DiscountRepository,
+            VoucherRepository,
+            FlashSaleRepository,
+            Box::new(DefaultDiscountEvaluator),
+            Box::new(DefaultVoucherEvaluator),
+        );
     }
 }
 
@@ -45,7 +45,6 @@ where
     V: VoucherRepositoryPort,
     F: FlashSaleRepositoryPort,
 {
-    #[allow(dead_code)]
     pub fn new(
         discount_repo: D,
         voucher_repo: V,

@@ -22,7 +22,6 @@ impl fmt::Display for DiscountType {
 }
 
 impl DiscountType {
-    #[allow(dead_code)]
     pub fn as_str(&self) -> &'static str {
         match self {
             DiscountType::Percentage => return "PERCENTAGE",
@@ -30,7 +29,6 @@ impl DiscountType {
         }
     }
 
-    #[allow(dead_code)]
     pub fn from_str(s: &str) -> Self {
         match s {
             "FIXED" => return DiscountType::Fixed,
@@ -59,8 +57,22 @@ pub struct CreateDiscountRequest {
     pub title: String,
     pub discount_type: DiscountType,
     pub value: Decimal,
-    pub target_category_id: Option<String>,
     pub target_product_id: Option<String>,
+    pub target_category_id: Option<String>,
     pub start_time: DateTime<Utc>,
     pub end_time: DateTime<Utc>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_discount_type_conversions() {
+        assert_eq!(DiscountType::Percentage.as_str(), "PERCENTAGE");
+        assert_eq!(DiscountType::Fixed.as_str(), "FIXED");
+        assert_eq!(DiscountType::from_str("FIXED"), DiscountType::Fixed);
+        assert_eq!(DiscountType::from_str("PERCENTAGE"), DiscountType::Percentage);
+        assert_eq!(DiscountType::from_str("UNKNOWN"), DiscountType::Percentage);
+    }
 }

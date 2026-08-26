@@ -3,7 +3,6 @@ use rocket::request::{FromRequest, Outcome, Request};
 
 use crate::error::AppError;
 
-#[allow(dead_code)]
 pub struct AdminOrMerchantGuard {
     pub role: String,
     pub user_id: Option<String>,

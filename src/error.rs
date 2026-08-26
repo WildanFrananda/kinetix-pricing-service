@@ -5,7 +5,6 @@ use serde::Serialize;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-#[allow(dead_code)]
 pub enum AppError {
     #[error("Database error: {0}")]
     Database(#[from] sqlx::Error),
@@ -43,5 +42,22 @@ impl<'r> Responder<'r, 'static> for AppError {
         return Response::build_from(err_json.respond_to(req)?)
             .status(status)
             .ok();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_app_error_display() {
+        let err_not_found = AppError::NotFound("Item not found".to_string());
+        assert_eq!(err_not_found.to_string(), "Not found: Item not found");
+
+        let err_bad_req = AppError::BadRequest("Invalid payload".to_string());
+        assert_eq!(err_bad_req.to_string(), "Validation error: Invalid payload");
+
+        let err_unauth = AppError::Unauthorized;
+        assert_eq!(err_unauth.to_string(), "Unauthorized access");
     }
 }

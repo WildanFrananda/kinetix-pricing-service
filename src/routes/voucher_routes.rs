@@ -4,17 +4,30 @@ use sqlx::PgPool;
 
 use crate::error::AppError;
 use crate::guards::AdminOrMerchantGuard;
-use crate::models::{CreateVoucherRequest, Voucher};
+use crate::models::{ApplyVoucherRequest, CreateVoucherRequest, Voucher};
 use crate::repositories::{VoucherRepository, VoucherRepositoryPort};
 
 #[post("/api/v1/vouchers", data = "<req>")]
 pub async fn create_voucher(
-    _auth: AdminOrMerchantGuard,
+    auth: AdminOrMerchantGuard,
     pool: &State<PgPool>,
     req: Json<CreateVoucherRequest>,
 ) -> Result<Json<Voucher>, AppError> {
+    println!("Create voucher request authorized for role: {}, user_id: {:?}", auth.role, auth.user_id);
     let repo = VoucherRepository;
     let voucher = repo.create(pool.inner(), req.into_inner()).await?;
+    return Ok(Json(voucher));
+}
+
+#[post("/api/v1/vouchers/apply", data = "<req>")]
+pub async fn apply_voucher(
+    pool: &State<PgPool>,
+    req: Json<ApplyVoucherRequest>,
+) -> Result<Json<Option<Voucher>>, AppError> {
+    let payload = req.into_inner();
+    let query_req = ApplyVoucherRequest::new(payload.code, payload.cart_subtotal);
+    let repo = VoucherRepository;
+    let voucher = repo.find_by_code(pool.inner(), &query_req.code).await?;
     return Ok(Json(voucher));
 }
 

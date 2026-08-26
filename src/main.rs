@@ -18,7 +18,7 @@ use routes::{
     discount_routes::{create_discount, list_discounts},
     flash_sale_routes::{create_flash_sale, get_flash_sale_for_product},
     health_routes::health_check,
-    voucher_routes::{create_voucher, get_voucher},
+    voucher_routes::{apply_voucher, create_voucher, get_voucher},
 };
 use sqlx::postgres::PgPoolOptions;
 use tonic::transport::Server;
@@ -63,6 +63,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 create_discount,
                 list_discounts,
                 create_voucher,
+                apply_voucher,
                 get_voucher,
                 create_flash_sale,
                 get_flash_sale_for_product
