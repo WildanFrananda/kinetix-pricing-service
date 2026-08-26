@@ -1,0 +1,30 @@
+[package]
+name = "kinetix-pricing-service"
+version = "0.1.0"
+edition = "2021"
+description = "Kinetix Pricing Service — Discounts, Vouchers, Flash Sales, and Product Pricing Engine in Rust (Rocket & Tonic gRPC)."
+
+[dependencies]
+rocket = { version = "0.5.1", features = ["json"] }
+tonic = "0.11"
+prost = "0.12"
+async-trait = "0.1"
+tokio = { version = "1.38", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sqlx = { version = "0.7", features = ["runtime-tokio-native-tls", "postgres", "chrono", "uuid", "rust_decimal"] }
+chrono = { version = "0.4", features = ["serde"] }
+rust_decimal = { version = "1.35", features = ["db-postgres", "serde"] }
+rust_decimal_macros = "1.35"
+uuid = { version = "1.8", features = ["v4", "serde"] }
+thiserror = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+dotenvy = "0.15"
+
+[build-dependencies]
+tonic-build = "0.11"
+protoc-bin-vendored = "3.0"
+
+[dev-dependencies]
+rocket = { version = "0.5.1", features = ["json"] }

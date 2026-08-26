@@ -1,0 +1,38 @@
+CREATE TABLE IF NOT EXISTS discounts (
+    id UUID PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    discount_type VARCHAR(50) NOT NULL,
+    value NUMERIC(12, 2) NOT NULL,
+    target_category_id VARCHAR(100),
+    target_product_id VARCHAR(100),
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS vouchers (
+    id UUID PRIMARY KEY,
+    code VARCHAR(100) NOT NULL UNIQUE,
+    title VARCHAR(255) NOT NULL,
+    discount_type VARCHAR(50) NOT NULL,
+    value NUMERIC(12, 2) NOT NULL,
+    min_spend NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    max_discount NUMERIC(12, 2),
+    quota INT NOT NULL DEFAULT 100,
+    used_count INT NOT NULL DEFAULT 0,
+    expires_at TIMESTAMPTZ NOT NULL,
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS flash_sales (
+    id UUID PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    product_id VARCHAR(100) NOT NULL,
+    flash_price NUMERIC(12, 2) NOT NULL,
+    stock_limit INT NOT NULL,
+    stock_sold INT NOT NULL DEFAULT 0,
+    start_time TIMESTAMPTZ NOT NULL,
+    end_time TIMESTAMPTZ NOT NULL,
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
