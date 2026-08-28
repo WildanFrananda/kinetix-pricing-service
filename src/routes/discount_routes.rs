@@ -1,16 +1,16 @@
 use rocket::serde::json::Json;
 use rocket::{get, post, State};
-use sqlx::PgPool;
 
 use crate::error::AppError;
 use crate::guards::AdminOrMerchantGuard;
 use crate::models::{CreateDiscountRequest, Discount};
 use crate::repositories::{DiscountRepository, DiscountRepositoryPort};
+use crate::DbPool;
 
 #[post("/api/v1/discounts", data = "<req>")]
 pub async fn create_discount(
     auth: AdminOrMerchantGuard,
-    pool: &State<PgPool>,
+    pool: &State<DbPool>,
     req: Json<CreateDiscountRequest>,
 ) -> Result<Json<Discount>, AppError> {
     if auth.role == "MERCHANT" && auth.user_id.is_none() {
@@ -31,7 +31,7 @@ pub async fn create_discount(
 }
 
 #[get("/api/v1/discounts")]
-pub async fn list_discounts(pool: &State<PgPool>) -> Result<Json<Vec<Discount>>, AppError> {
+pub async fn list_discounts(pool: &State<DbPool>) -> Result<Json<Vec<Discount>>, AppError> {
     let repo = DiscountRepository;
     let discounts = repo.find_all_active(pool.inner()).await?;
     return Ok(Json(discounts));

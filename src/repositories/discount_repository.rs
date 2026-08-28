@@ -1,61 +1,57 @@
-use std::str::FromStr;
 use async_trait::async_trait;
 use chrono::Utc;
-use sqlx::PgPool;
+use diesel::prelude::*;
+use diesel_async::RunQueryDsl;
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::models::discount::DiscountType;
 use crate::models::{CreateDiscountRequest, Discount};
 use crate::repositories::traits::DiscountRepositoryPort;
+use crate::schema::discounts::dsl::*;
+use crate::DbPool;
 
 pub struct DiscountRepository;
 
 #[async_trait]
 impl DiscountRepositoryPort for DiscountRepository {
-    async fn find_all_active(&self, pool: &PgPool) -> Result<Vec<Discount>, AppError> {
+    async fn find_all_active(&self, pool: &DbPool) -> Result<Vec<Discount>, AppError> {
+        let mut conn = pool.get().await?;
         let now = Utc::now();
-        let records = sqlx::query_as::<_, Discount>(
-            r#"
-            SELECT id, title, discount_type, value, target_product_id, target_category_id, active, start_time, end_time, created_at, updated_at
-            FROM discounts
-            WHERE active = true
-              AND start_time <= $1
-              AND end_time >= $1
-            ORDER BY created_at DESC
-            "#,
-        )
-        .bind(now)
-        .fetch_all(pool)
-        .await?;
+        let records = discounts
+            .filter(active.eq(true))
+            .filter(start_time.le(now))
+            .filter(end_time.ge(now))
+            .order(created_at.desc())
+            .select(Discount::as_select())
+            .load(&mut conn)
+            .await?;
 
         return Ok(records);
     }
 
-    async fn create(&self, pool: &PgPool, req: CreateDiscountRequest) -> Result<Discount, AppError> {
-        let id = Uuid::new_v4();
+    async fn create(&self, pool: &DbPool, req: CreateDiscountRequest) -> Result<Discount, AppError> {
+        let mut conn = pool.get().await?;
+        let new_id = Uuid::new_v4();
         let now = Utc::now();
-        let discount_type_str = req.discount_type.as_str();
-        let _verified_type = DiscountType::from_str(discount_type_str)?;
 
-        let record = sqlx::query_as::<_, Discount>(
-            r#"
-            INSERT INTO discounts (id, title, discount_type, value, target_product_id, target_category_id, active, start_time, end_time, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, true, $7, $8, $9, $9)
-            RETURNING id, title, discount_type, value, target_product_id, target_category_id, active, start_time, end_time, created_at, updated_at
-            "#,
-        )
-        .bind(id)
-        .bind(req.title)
-        .bind(discount_type_str)
-        .bind(req.value)
-        .bind(req.target_product_id)
-        .bind(req.target_category_id)
-        .bind(req.start_time)
-        .bind(req.end_time)
-        .bind(now)
-        .fetch_one(pool)
-        .await?;
+        let new_discount = Discount {
+            id: new_id,
+            title: req.title,
+            discount_type: req.discount_type.as_str().to_string(),
+            value: req.value,
+            target_product_id: req.target_product_id,
+            target_category_id: req.target_category_id,
+            active: true,
+            start_time: req.start_time,
+            end_time: req.end_time,
+            created_at: now,
+            updated_at: now,
+        };
+
+        let record = diesel::insert_into(discounts)
+            .values(&new_discount)
+            .get_result::<Discount>(&mut conn)
+            .await?;
 
         return Ok(record);
     }

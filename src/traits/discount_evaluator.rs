@@ -34,7 +34,7 @@ impl DiscountEvaluator for DefaultDiscountEvaluator {
     }
 
     fn calculate_savings(&self, discount: &Discount, base_price: Decimal) -> Decimal {
-        let savings = match discount.discount_type {
+        let savings = match discount.get_discount_type() {
             DiscountType::Percentage => base_price * (discount.value / dec!(100.00)),
             DiscountType::Fixed => discount.value.min(base_price),
         };

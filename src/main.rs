@@ -1,26 +1,16 @@
 #[macro_use]
 extern crate rocket;
 
-mod config;
-mod error;
-mod grpc;
-mod guards;
-mod models;
-mod repositories;
-mod routes;
-mod services;
-mod traits;
-
 use std::net::SocketAddr;
-use config::AppConfig;
-use grpc::{PricingGrpcServer, PricingServiceServer};
-use routes::{
+use kinetix_pricing_service::config::AppConfig;
+use kinetix_pricing_service::db::create_pool;
+use kinetix_pricing_service::grpc::{PricingGrpcServer, PricingServiceServer};
+use kinetix_pricing_service::routes::{
     discount_routes::{create_discount, list_discounts},
     flash_sale_routes::{create_flash_sale, get_flash_sale_for_product},
     health_routes::health_check,
     voucher_routes::{apply_voucher, create_voucher, get_voucher},
 };
-use sqlx::postgres::PgPoolOptions;
 use tonic::transport::Server;
 use tracing::info;
 
@@ -29,13 +19,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
     let app_cfg = AppConfig::load();
-    info!("Initializing Kinetix Pricing Service on port {} (REST Admin) and :50054 (gRPC)", app_cfg.port);
+    info!("Initializing Kinetix Pricing Service on port {} (REST Admin) and :50054 (gRPC with Diesel Async)", app_cfg.port);
 
-    let db_pool = PgPoolOptions::new()
-        .max_connections(10)
-        .connect(&app_cfg.database_url)
-        .await
-        .expect("Failed to connect to PostgreSQL database kinetix_pricing_dev");
+    let db_pool = create_pool(&app_cfg.database_url);
 
     // Spawn gRPC Server on port 50054
     let grpc_pool = db_pool.clone();

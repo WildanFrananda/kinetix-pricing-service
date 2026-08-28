@@ -1,17 +1,19 @@
 # 💰 Kinetix Pricing Service (`kinetix-pricing-service`)
 
-High-performance microservice written in **Rust 1.98 (Rocket 0.5 & Tonic gRPC & SQLx)** responsible for calculating product prices, applying multi-tier discounts, managing voucher redemptions, and handling time-windowed flash sales for the Kinetix E-Commerce ecosystem.
+High-performance microservice written in **Rust 1.98 (Rocket 0.5 & Tonic gRPC & Diesel Async 0.5)** responsible for calculating product prices, applying multi-tier discounts, managing voucher redemptions, and handling time-windowed flash sales for the Kinetix E-Commerce ecosystem.
 
 ---
 
 ## 🏛️ Architecture & Ports
 
 - **Port `:6000` (HTTP REST Admin)**:
-  - Admin/Merchant promo management endpoints (`POST /api/v1/discounts`, `POST /api/v1/vouchers`, `POST /api/v1/flash-sales`, `GET /health`).
+  - Admin/Merchant promo management endpoints (`POST /api/v1/discounts`, `POST /api/v1/vouchers`, `POST /api/v1/vouchers/apply`, `POST /api/v1/flash-sales`, `GET /health`).
   - Protected by `AdminOrMerchantGuard` (validates `X-User-Role: ADMIN` or `X-User-Role: MERCHANT` from Kong API Gateway).
 - **Port `:50054` (gRPC Protobuf)**:
   - High-performance inter-service price calculation server (`PricingService` RPC `CalculatePrice`).
   - Used directly by backend microservices like `kinetix-catalog-service` over Protobuf / HTTP/2.
+- **ORM & Database Layer**:
+  - Powered by **Diesel 2.2** & **Diesel Async 0.5** with `deadpool` connection pooling for non-blocking asynchronous PostgreSQL queries.
 
 ---
 
@@ -32,7 +34,7 @@ High-performance microservice written in **Rust 1.98 (Rocket 0.5 & Tonic gRPC & 
 # 1. Check Cargo Compilation (0 Errors, 0 Warnings)
 cargo check
 
-# 2. Run Unit Test Suite
+# 2. Run Unit & Integration Test Suite
 cargo test
 
 # 3. Run Service locally on Port 6000 (REST) and :50054 (gRPC)

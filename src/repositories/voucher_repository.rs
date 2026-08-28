@@ -1,55 +1,60 @@
 use async_trait::async_trait;
 use chrono::Utc;
-use sqlx::PgPool;
+use diesel::prelude::*;
+use diesel_async::RunQueryDsl;
 use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::models::{CreateVoucherRequest, Voucher};
 use crate::repositories::traits::VoucherRepositoryPort;
+use crate::schema::vouchers::dsl::*;
+use crate::DbPool;
 
 pub struct VoucherRepository;
 
 #[async_trait]
 impl VoucherRepositoryPort for VoucherRepository {
-    async fn find_by_code(&self, pool: &PgPool, code: &str) -> Result<Option<Voucher>, AppError> {
-        let record = sqlx::query_as::<_, Voucher>(
-            r#"
-            SELECT id, code, title, discount_type, value, min_spend, max_discount, quota, used_count, active, expires_at, created_at, updated_at
-            FROM vouchers
-            WHERE code = $1
-            "#,
-        )
-        .bind(code)
-        .fetch_optional(pool)
-        .await?;
+    async fn find_by_code(&self, pool: &DbPool, search_code: &str) -> Result<Option<Voucher>, AppError> {
+        let mut conn = pool.get().await?;
+        let now = Utc::now();
+
+        let record = vouchers
+            .filter(code.eq(search_code))
+            .filter(active.eq(true))
+            .filter(expires_at.gt(now))
+            .select(Voucher::as_select())
+            .first(&mut conn)
+            .await
+            .optional()?;
 
         return Ok(record);
     }
 
-    async fn create(&self, pool: &PgPool, req: CreateVoucherRequest) -> Result<Voucher, AppError> {
-        let id = Uuid::new_v4();
+    async fn create(&self, pool: &DbPool, req: CreateVoucherRequest) -> Result<Voucher, AppError> {
+        let mut conn = pool.get().await?;
+        let new_id = Uuid::new_v4();
         let now = Utc::now();
-        let discount_type_str = req.discount_type.to_string();
 
-        let record = sqlx::query_as::<_, Voucher>(
-            r#"
-            INSERT INTO vouchers (id, code, title, discount_type, value, min_spend, max_discount, quota, used_count, active, expires_at, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, true, $9, $10, $10)
-            RETURNING id, code, title, discount_type, value, min_spend, max_discount, quota, used_count, active, expires_at, created_at, updated_at
-            "#,
-        )
-        .bind(id)
-        .bind(req.code)
-        .bind(req.title)
-        .bind(discount_type_str)
-        .bind(req.value)
-        .bind(req.min_spend)
-        .bind(req.max_discount)
-        .bind(req.quota)
-        .bind(req.expires_at)
-        .bind(now)
-        .fetch_one(pool)
-        .await?;
+        let new_voucher = Voucher {
+            id: new_id,
+            code: req.code,
+            title: req.title,
+            discount_type: req.discount_type.as_str().to_string(),
+            value: req.value,
+            min_spend: req.min_spend,
+            max_discount: req.max_discount,
+            quota: req.quota,
+            used_count: 0,
+            active: true,
+            expires_at: req.expires_at,
+            created_at: now,
+            updated_at: now,
+        };
+
+        let record = diesel::insert_into(vouchers)
+            .values(&new_voucher)
+            .get_result::<Voucher>(&mut conn)
+            .await?;
 
         return Ok(record);
     }

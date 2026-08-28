@@ -26,7 +26,7 @@ impl VoucherEvaluator for DefaultVoucherEvaluator {
             return dec!(0.00);
         }
 
-        let raw_discount = match voucher.discount_type {
+        let raw_discount = match voucher.get_discount_type() {
             DiscountType::Percentage => subtotal * (voucher.value / dec!(100.00)),
             DiscountType::Fixed => voucher.value,
         };

@@ -1,6 +1,5 @@
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use sqlx::PgPool;
 
 use crate::error::AppError;
 use crate::models::{
@@ -13,6 +12,7 @@ use crate::repositories::{
 use crate::traits::{
     DefaultDiscountEvaluator, DefaultVoucherEvaluator, DiscountEvaluator, VoucherEvaluator,
 };
+use crate::DbPool;
 
 pub struct PricingService<D, V, F>
 where
@@ -63,7 +63,7 @@ where
 
     pub async fn calculate_price(
         &self,
-        pool: &PgPool,
+        pool: &DbPool,
         req: CalculatePriceRequest,
     ) -> Result<CalculatePriceResponse, AppError> {
         let active_discounts = self.discount_repo.find_all_active(pool).await?;

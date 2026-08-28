@@ -1,14 +1,16 @@
 use std::fmt;
 use std::str::FromStr;
 use chrono::{DateTime, Utc};
+use diesel::pg::Pg;
+use diesel::prelude::*;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::AppError;
+use crate::schema::discounts;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, sqlx::Type)]
-#[sqlx(type_name = "VARCHAR", rename_all = "SCREAMING_SNAKE_CASE")]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum DiscountType {
     Percentage,
@@ -42,11 +44,13 @@ impl FromStr for DiscountType {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, Queryable, Selectable, Insertable)]
+#[diesel(table_name = discounts)]
+#[diesel(check_for_backend(Pg))]
 pub struct Discount {
     pub id: Uuid,
     pub title: String,
-    pub discount_type: DiscountType,
+    pub discount_type: String,
     pub value: Decimal,
     pub target_product_id: Option<String>,
     pub target_category_id: Option<String>,
@@ -55,6 +59,12 @@ pub struct Discount {
     pub end_time: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+impl Discount {
+    pub fn get_discount_type(&self) -> DiscountType {
+        return DiscountType::from_str(&self.discount_type).unwrap_or(DiscountType::Percentage);
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

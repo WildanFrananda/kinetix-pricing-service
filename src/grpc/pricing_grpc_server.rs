@@ -1,10 +1,10 @@
 use rust_decimal::Decimal;
 use std::str::FromStr;
-use sqlx::PgPool;
 use tonic::{Request, Response, Status};
 
 use crate::models::{CalculatePriceRequest as DomainCalcReq, PriceItemRequest as DomainItemReq};
 use crate::services::PricingService;
+use crate::DbPool;
 
 pub mod proto {
     tonic::include_proto!("pricing.v1");
@@ -15,7 +15,7 @@ pub use proto::pricing_service_server::PricingServiceServer;
 use proto::{CalculatePriceRequest, CalculatePriceResponse, PriceItemResponse};
 
 pub struct PricingGrpcServer {
-    pub pool: PgPool,
+    pub pool: DbPool,
     pub pricing_service: PricingService<
         crate::repositories::DiscountRepository,
         crate::repositories::VoucherRepository,
@@ -24,7 +24,7 @@ pub struct PricingGrpcServer {
 }
 
 impl PricingGrpcServer {
-    pub fn new(pool: PgPool) -> Self {
+    pub fn new(pool: DbPool) -> Self {
         return PricingGrpcServer {
             pool,
             pricing_service: PricingService::default(),
@@ -67,18 +67,21 @@ impl PricingGrpcTrait for PricingGrpcServer {
                 return Status::internal(format!("Pricing service calculation error: {}", e));
             })?;
 
-        let mut item_responses = Vec::new();
-        for item in result.items {
-            item_responses.push(PriceItemResponse {
-                product_id: item.product_id,
-                base_price: item.base_price.to_string(),
-                final_unit_price: item.final_unit_price.to_string(),
-                quantity: item.quantity,
-                line_total: item.line_total.to_string(),
-                applied_flash_sale: item.applied_flash_sale,
-                applied_discount: item.applied_discount,
-            });
-        }
+        let pb_items = result
+            .items
+            .into_iter()
+            .map(|item| {
+                return PriceItemResponse {
+                    product_id: item.product_id,
+                    base_price: item.base_price.to_string(),
+                    final_unit_price: item.final_unit_price.to_string(),
+                    quantity: item.quantity,
+                    line_total: item.line_total.to_string(),
+                    applied_flash_sale: item.applied_flash_sale,
+                    applied_discount: item.applied_discount,
+                };
+            })
+            .collect();
 
         let response = CalculatePriceResponse {
             subtotal: result.subtotal.to_string(),
@@ -86,7 +89,7 @@ impl PricingGrpcTrait for PricingGrpcServer {
             voucher_discount: result.voucher_discount.to_string(),
             final_total: result.final_total.to_string(),
             applied_voucher: result.applied_voucher,
-            items: item_responses,
+            items: pb_items,
         };
 
         return Ok(Response::new(response));

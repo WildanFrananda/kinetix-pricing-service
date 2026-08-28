@@ -1,17 +1,17 @@
 use rocket::serde::json::Json;
 use rocket::{get, post, State};
-use sqlx::PgPool;
 
 use crate::error::AppError;
 use crate::guards::AdminOrMerchantGuard;
 use crate::models::{ApplyVoucherRequest, CreateVoucherRequest, Voucher};
 use crate::repositories::{VoucherRepository, VoucherRepositoryPort};
 use crate::traits::{DefaultVoucherEvaluator, VoucherEvaluator};
+use crate::DbPool;
 
 #[post("/api/v1/vouchers", data = "<req>")]
 pub async fn create_voucher(
     auth: AdminOrMerchantGuard,
-    pool: &State<PgPool>,
+    pool: &State<DbPool>,
     req: Json<CreateVoucherRequest>,
 ) -> Result<Json<Voucher>, AppError> {
     if auth.role == "MERCHANT" && auth.user_id.is_none() {
@@ -33,7 +33,7 @@ pub async fn create_voucher(
 
 #[post("/api/v1/vouchers/apply", data = "<req>")]
 pub async fn apply_voucher(
-    pool: &State<PgPool>,
+    pool: &State<DbPool>,
     req: Json<ApplyVoucherRequest>,
 ) -> Result<Json<Option<Voucher>>, AppError> {
     let payload = req.into_inner();
@@ -58,7 +58,7 @@ pub async fn apply_voucher(
 
 #[get("/api/v1/vouchers/<code>")]
 pub async fn get_voucher(
-    pool: &State<PgPool>,
+    pool: &State<DbPool>,
     code: &str,
 ) -> Result<Json<Voucher>, AppError> {
     let repo = VoucherRepository;

@@ -1,9 +1,15 @@
 use chrono::{DateTime, Utc};
+use diesel::pg::Pg;
+use diesel::prelude::*;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+use crate::schema::flash_sales;
+
+#[derive(Debug, Clone, Serialize, Deserialize, Queryable, Selectable, Insertable)]
+#[diesel(table_name = flash_sales)]
+#[diesel(check_for_backend(Pg))]
 pub struct FlashSale {
     pub id: Uuid,
     pub title: String,

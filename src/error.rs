@@ -7,7 +7,10 @@ use thiserror::Error;
 #[derive(Error, Debug)]
 pub enum AppError {
     #[error("Database error: {0}")]
-    Database(#[from] sqlx::Error),
+    Database(#[from] diesel::result::Error),
+
+    #[error("Database connection pool error: {0}")]
+    Pool(String),
 
     #[error("Not found: {0}")]
     NotFound(String),
@@ -17,6 +20,12 @@ pub enum AppError {
 
     #[error("Unauthorized access")]
     Unauthorized,
+}
+
+impl From<diesel_async::pooled_connection::deadpool::PoolError> for AppError {
+    fn from(err: diesel_async::pooled_connection::deadpool::PoolError) -> Self {
+        return AppError::Pool(err.to_string());
+    }
 }
 
 #[derive(Serialize)]
@@ -29,6 +38,7 @@ impl<'r> Responder<'r, 'static> for AppError {
     fn respond_to(self, req: &'r rocket::Request<'_>) -> response::Result<'static> {
         let (status, message) = match &self {
             AppError::Database(e) => (Status::InternalServerError, format!("Database error: {}", e)),
+            AppError::Pool(e) => (Status::InternalServerError, format!("Pool error: {}", e)),
             AppError::NotFound(msg) => (Status::NotFound, msg.clone()),
             AppError::BadRequest(msg) => (Status::BadRequest, msg.clone()),
             AppError::Unauthorized => (Status::Unauthorized, "Unauthorized".to_string()),

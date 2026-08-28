@@ -1,16 +1,16 @@
 use rocket::serde::json::Json;
 use rocket::{get, post, State};
-use sqlx::PgPool;
 
 use crate::error::AppError;
 use crate::guards::AdminOrMerchantGuard;
 use crate::models::{CreateFlashSaleRequest, FlashSale};
 use crate::repositories::{FlashSaleRepository, FlashSaleRepositoryPort};
+use crate::DbPool;
 
 #[post("/api/v1/flash-sales", data = "<req>")]
 pub async fn create_flash_sale(
     auth: AdminOrMerchantGuard,
-    pool: &State<PgPool>,
+    pool: &State<DbPool>,
     req: Json<CreateFlashSaleRequest>,
 ) -> Result<Json<FlashSale>, AppError> {
     if auth.role == "MERCHANT" && auth.user_id.is_none() {
@@ -32,7 +32,7 @@ pub async fn create_flash_sale(
 
 #[get("/api/v1/flash-sales/<product_id>")]
 pub async fn get_flash_sale_for_product(
-    pool: &State<PgPool>,
+    pool: &State<DbPool>,
     product_id: &str,
 ) -> Result<Json<Option<FlashSale>>, AppError> {
     let repo = FlashSaleRepository;
