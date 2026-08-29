@@ -1,5 +1,6 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::env::set_var("PROTOC", protoc_bin_vendored::protoc_bin_path().unwrap());
     tonic_build::compile_protos("proto/pricing/v1/pricing_service.proto")?;
+    tonic_build::compile_protos("proto/shipping/v1/shipping_service.proto")?;
     return Ok(());
 }

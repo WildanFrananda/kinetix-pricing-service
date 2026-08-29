@@ -54,9 +54,15 @@ impl PricingGrpcTrait for PricingGrpcServer {
             });
         }
 
+        let base_shipping_fee = match req.base_shipping_fee {
+            Some(fee_str) => Decimal::from_str(&fee_str).ok(),
+            None => None,
+        };
+
         let domain_req = DomainCalcReq {
             items: domain_items,
             voucher_code: req.voucher_code,
+            base_shipping_fee,
         };
 
         let result = self
@@ -90,6 +96,9 @@ impl PricingGrpcTrait for PricingGrpcServer {
             final_total: result.final_total.to_string(),
             applied_voucher: result.applied_voucher,
             items: pb_items,
+            base_shipping_fee: result.base_shipping_fee.to_string(),
+            shipping_discount: result.shipping_discount.to_string(),
+            final_shipping_fee: result.final_shipping_fee.to_string(),
         };
 
         return Ok(Response::new(response));
