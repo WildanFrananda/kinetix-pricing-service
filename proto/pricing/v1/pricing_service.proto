@@ -17,6 +17,7 @@ message CalculatePriceRequest {
   repeated PriceItemRequest items = 1;
   optional string voucher_code = 2;
   optional string base_shipping_fee = 3;
+  optional string payment_method = 4;
 }
 
 message PriceItemResponse {
@@ -39,6 +40,7 @@ message CalculatePriceResponse {
   string base_shipping_fee = 7;
   string shipping_discount = 8;
   string final_shipping_fee = 9;
+  string payment_discount = 10;
 }
 
 service PricingService {

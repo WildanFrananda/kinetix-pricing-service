@@ -14,6 +14,7 @@ pub struct CalculatePriceRequest {
     pub items: Vec<PriceItemRequest>,
     pub voucher_code: Option<String>,
     pub base_shipping_fee: Option<Decimal>,
+    pub payment_method: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,4 +39,5 @@ pub struct CalculatePriceResponse {
     pub base_shipping_fee: Decimal,
     pub shipping_discount: Decimal,
     pub final_shipping_fee: Decimal,
+    pub payment_discount: Decimal,
 }

@@ -63,6 +63,7 @@ impl PricingGrpcTrait for PricingGrpcServer {
             items: domain_items,
             voucher_code: req.voucher_code,
             base_shipping_fee,
+            payment_method: req.payment_method,
         };
 
         let result = self
@@ -89,7 +90,7 @@ impl PricingGrpcTrait for PricingGrpcServer {
             })
             .collect();
 
-        let response = CalculatePriceResponse {
+        return Ok(Response::new(CalculatePriceResponse {
             subtotal: result.subtotal.to_string(),
             total_discount: result.total_discount.to_string(),
             voucher_discount: result.voucher_discount.to_string(),
@@ -99,8 +100,7 @@ impl PricingGrpcTrait for PricingGrpcServer {
             base_shipping_fee: result.base_shipping_fee.to_string(),
             shipping_discount: result.shipping_discount.to_string(),
             final_shipping_fee: result.final_shipping_fee.to_string(),
-        };
-
-        return Ok(Response::new(response));
+            payment_discount: result.payment_discount.to_string(),
+        }));
     }
 }

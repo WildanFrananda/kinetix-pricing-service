@@ -140,12 +140,19 @@ where
             }
         }
 
+        let mut payment_discount = dec!(0.00);
+        if let Some(method) = &req.payment_method {
+            if method.contains("INTERNAL_WALLET") || method.contains("WALLET") {
+                payment_discount = (subtotal * dec!(0.05)).min(dec!(25000.00));
+            }
+        }
+
         let final_shipping_fee = (base_shipping - shipping_discount).max(dec!(0.00));
-        let final_total = (subtotal - voucher_discount + final_shipping_fee).max(dec!(0.00));
+        let final_total = (subtotal - voucher_discount - payment_discount + final_shipping_fee).max(dec!(0.00));
 
         return Ok(CalculatePriceResponse {
             subtotal,
-            total_discount: total_item_savings + voucher_discount + shipping_discount,
+            total_discount: total_item_savings + voucher_discount + shipping_discount + payment_discount,
             voucher_discount,
             final_total,
             applied_voucher,
@@ -153,6 +160,7 @@ where
             base_shipping_fee: base_shipping,
             shipping_discount,
             final_shipping_fee,
+            payment_discount,
         });
     }
 }
