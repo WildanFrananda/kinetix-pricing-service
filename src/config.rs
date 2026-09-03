@@ -3,6 +3,7 @@ use std::env;
 pub struct AppConfig {
     pub database_url: String,
     pub port: u16,
+    pub grpc_port: u16,
 }
 
 impl AppConfig {
@@ -19,6 +20,11 @@ impl AppConfig {
             })
             .unwrap_or(6000);
 
-        return AppConfig { database_url, port };
+        let grpc_port = env::var("GRPC_PORT")
+            .expect("GRPC_PORT environment variable MUST be configured. Fail-fast shutdown.")
+            .parse::<u16>()
+            .expect("GRPC_PORT must be a port number. Fail-fast shutdown.");
+
+        return AppConfig { database_url, port, grpc_port };
     }
 }

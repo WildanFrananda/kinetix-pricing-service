@@ -37,8 +37,12 @@ RUN touch src/main.rs src/lib.rs && cargo build --release --locked
 
 FROM debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171 AS final
 
+# curl is here for the compose healthcheck, which probes /health/ready over HTTP. Without it
+# this image has no way at all to make an HTTP request, and the service could only be checked
+# by "is the process alive" — which is exactly how it ran for its whole life against a database
+# with no tables.
 RUN apt-get update && apt-get install --no-install-recommends -y \
-        libpq5 ca-certificates \
+        libpq5 ca-certificates curl \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 10001 pricing \
     && useradd --system --uid 10001 --gid 10001 --no-create-home pricing
