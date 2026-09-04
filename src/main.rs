@@ -56,36 +56,47 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ))
         .build()?;
 
-    tokio::spawn(async move {
+    let grpc_server = async move {
         info!("gRPC Pricing Server listening on {}", grpc_addr);
-        if let Err(e) = Server::builder()
+
+        return Server::builder()
             .add_service(PricingServiceServer::new(grpc_service))
             .add_service(reflection)
             .serve(grpc_addr)
             .await
-        {
-            eprintln!("gRPC Server error: {}", e);
-        }
-    });
+            .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> {
+                format!("gRPC server on {grpc_addr} stopped: {e}").into()
+            });
+    };
 
-    let _rocket_server = rocket::build()
-        .manage(db_pool)
-        .mount(
-            "/",
-            routes![
-                health_check,
-                health_ready,
-                create_discount,
-                list_discounts,
-                create_voucher,
-                apply_voucher,
-                get_voucher,
-                create_flash_sale,
-                get_flash_sale_for_product
-            ],
-        )
-        .launch()
-        .await?;
+    let rest_server = async move {
+        let _rocket = rocket::build()
+            .manage(db_pool)
+            .mount(
+                "/",
+                routes![
+                    health_check,
+                    health_ready,
+                    create_discount,
+                    list_discounts,
+                    create_voucher,
+                    apply_voucher,
+                    get_voucher,
+                    create_flash_sale,
+                    get_flash_sale_for_product
+                ],
+            )
+            .launch()
+            .await
+            .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> {
+                format!("REST server stopped: {e}").into()
+            })?;
+
+        return Ok(());
+    };
+
+    tokio::try_join!(grpc_server, rest_server)
+        .map_err(|e| -> Box<dyn std::error::Error> { e.to_string().into() })?;
 
     return Ok(());
 }

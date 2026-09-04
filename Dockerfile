@@ -59,4 +59,8 @@ USER 10001:10001
 # over the `kinetix` network by service name.
 EXPOSE 6000 50054
 
+
+HEALTHCHECK --interval=10s --timeout=5s --start-period=20s --retries=3 \
+    CMD curl -fsS http://127.0.0.1:6000/health/ready > /dev/null || exit 1
+
 ENTRYPOINT ["kinetix-pricing-service"]
