@@ -77,10 +77,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> {
                 format!("the service certificate was rejected: {e}").into()
             })?
-            .add_service(PricingServiceServer::with_interceptor(
-                grpc_service,
-                move |req| peer_guard.check(req),
-            ))
+            .layer(tonic::service::interceptor(move |req| peer_guard.check(req)))
+            .add_service(PricingServiceServer::new(grpc_service))
             .add_service(reflection)
             .serve(grpc_addr)
             .await
