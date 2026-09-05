@@ -7,6 +7,8 @@ use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 use kinetix_pricing_service::config::AppConfig;
 use kinetix_pricing_service::db::create_pool;
 use kinetix_pricing_service::grpc::{PricingGrpcServer, PricingServiceServer};
+use kinetix_pricing_service::security::jwt::JwtVerifier;
+use kinetix_pricing_service::security::{PeerGuard, ServiceIdentity};
 use kinetix_pricing_service::routes::{
     discount_routes::{create_discount, list_discounts},
     flash_sale_routes::{create_flash_sale, get_flash_sale_for_product},
@@ -20,7 +22,12 @@ const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .init();
 
     if std::env::args().any(|arg| arg == "--migrate") {
         let database_url = std::env::var("DATABASE_URL")
@@ -56,11 +63,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ))
         .build()?;
 
+    let service_identity = ServiceIdentity::load()
+        .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+    let server_tls = service_identity.server_tls();
+
+    let peer_guard = PeerGuard::from_env().map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+
     let grpc_server = async move {
-        info!("gRPC Pricing Server listening on {}", grpc_addr);
+        info!("gRPC Pricing Server listening on {} (mTLS)", grpc_addr);
 
         return Server::builder()
-            .add_service(PricingServiceServer::new(grpc_service))
+            .tls_config(server_tls)
+            .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> {
+                format!("the service certificate was rejected: {e}").into()
+            })?
+            .add_service(PricingServiceServer::with_interceptor(
+                grpc_service,
+                move |req| peer_guard.check(req),
+            ))
             .add_service(reflection)
             .serve(grpc_addr)
             .await
@@ -69,9 +89,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             });
     };
 
+    let verifier = JwtVerifier::from_env().map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+    let key_count = verifier
+        .refresh()
+        .await
+        .map_err(|e| -> Box<dyn std::error::Error> { format!("cannot load identity's JWKS: {e}").into() })?;
+    info!("loaded {} signing key(s) from identity's JWKS", key_count);
+
     let rest_server = async move {
         let _rocket = rocket::build()
             .manage(db_pool)
+            .manage(verifier)
             .mount(
                 "/",
                 routes![

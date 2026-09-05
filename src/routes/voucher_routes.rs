@@ -14,9 +14,7 @@ pub async fn create_voucher(
     pool: &State<DbPool>,
     req: Json<CreateVoucherRequest>,
 ) -> Result<Json<Voucher>, AppError> {
-    if auth.role == "MERCHANT" && auth.user_id.is_none() {
-        return Err(AppError::Unauthorized);
-    }
+    let _caller: &str = &auth.principal_id;
 
     let payload = req.into_inner();
     if payload.code.trim().is_empty() {

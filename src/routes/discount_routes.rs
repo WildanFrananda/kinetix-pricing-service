@@ -13,9 +13,7 @@ pub async fn create_discount(
     pool: &State<DbPool>,
     req: Json<CreateDiscountRequest>,
 ) -> Result<Json<Discount>, AppError> {
-    if auth.role == "MERCHANT" && auth.user_id.is_none() {
-        return Err(AppError::Unauthorized);
-    }
+    let _caller: &str = &auth.principal_id;
 
     let payload = req.into_inner();
     if payload.value <= rust_decimal_macros::dec!(0.0) {

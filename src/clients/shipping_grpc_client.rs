@@ -5,6 +5,9 @@ pub mod shipping_proto {
 use rust_decimal::Decimal;
 use std::str::FromStr;
 use shipping_proto::shipping_service_client::ShippingServiceClient;
+use tonic::transport::{Channel, Endpoint};
+
+use crate::security::ServiceIdentity;
 use shipping_proto::{EstimateShippingOptionsRequest, LocationCoordinates};
 
 #[derive(Debug, Clone)]
@@ -42,9 +45,29 @@ impl ShippingGrpcClient {
         total_weight_kg: f64,
         merchant_id: Option<i64>,
     ) -> Result<EstimateShippingResult, String> {
-        let mut client = ShippingServiceClient::connect(self.endpoint_url.clone())
+        let identity = ServiceIdentity::load()
+            .map_err(|e| return format!("cannot present a client certificate to matching: {}", e))?;
+
+        let authority = self
+            .endpoint_url
+            .trim_start_matches("http://")
+            .trim_start_matches("https://")
+            .split(':')
+            .next()
+            .unwrap_or("kinetix-matching-service")
+            .to_string();
+
+        let endpoint = Endpoint::from_shared(self.endpoint_url.clone())
+            .map_err(|e| return format!("matching endpoint is not a valid URL: {}", e))?
+            .tls_config(identity.client_tls(&authority))
+            .map_err(|e| return format!("client TLS could not be configured: {}", e))?;
+
+        let channel: Channel = endpoint
+            .connect()
             .await
             .map_err(|e| return format!("Failed to connect to matching gRPC: {}", e))?;
+
+        let mut client = ShippingServiceClient::new(channel);
 
         let request = tonic::Request::new(EstimateShippingOptionsRequest {
             origin: Some(LocationCoordinates {
