@@ -15,3 +15,8 @@
 # Operating System files
 .DS_Store
 Thumbs.db
+
+# The wire contracts, fetched by bin/sync-contracts at a pinned commit. Never committed: a copy
+# of a contract in a service repository is the exact thing kinetix-contracts exists to remove,
+# and S9's exit criterion counts tracked .proto files.
+/.contracts/

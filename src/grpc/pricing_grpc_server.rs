@@ -1,18 +1,20 @@
-use rust_decimal::Decimal;
-use std::str::FromStr;
 use tonic::{Request, Response, Status};
 
 use crate::models::{CalculatePriceRequest as DomainCalcReq, PriceItemRequest as DomainItemReq};
+use crate::money::{from_money, from_optional_money, to_money};
 use crate::services::PricingService;
 use crate::DbPool;
 
-pub mod proto {
-    tonic::include_proto!("pricing.v1");
-}
+use crate::proto::pricing::v1 as proto;
 
 use proto::pricing_service_server::PricingService as PricingGrpcTrait;
 pub use proto::pricing_service_server::PricingServiceServer;
-use proto::{CalculatePriceRequest, CalculatePriceResponse, PriceItemResponse};
+use proto::{
+    AllocateFlashSaleStockRequest, AllocateFlashSaleStockResponse, CalculatePriceRequest,
+    CalculatePriceResponse, PriceItemResponse, RedeemVoucherRequest, RedeemVoucherResponse,
+    ReleaseFlashSaleAllocationRequest, ReleaseFlashSaleAllocationResponse,
+    ReleaseVoucherRedemptionRequest, ReleaseVoucherRedemptionResponse,
+};
 
 pub struct PricingGrpcServer {
     pub pool: DbPool,
@@ -42,9 +44,15 @@ impl PricingGrpcTrait for PricingGrpcServer {
         let mut domain_items = Vec::new();
 
         for item in req.items {
-            let base_price = Decimal::from_str(&item.base_price).map_err(|_| {
-                return Status::invalid_argument(format!("Invalid base_price decimal: {}", item.base_price));
-            })?;
+            let base_price = match &item.base_price {
+                Some(money) => from_money(money)?,
+                None => {
+                    return Err(Status::invalid_argument(format!(
+                        "item {} carries no base_price",
+                        item.product_id
+                    )))
+                }
+            };
 
             domain_items.push(DomainItemReq {
                 product_id: item.product_id,
@@ -54,15 +62,10 @@ impl PricingGrpcTrait for PricingGrpcServer {
             });
         }
 
-        let base_shipping_fee = match req.base_shipping_fee {
-            Some(fee_str) => Decimal::from_str(&fee_str).ok(),
-            None => None,
-        };
-
         let domain_req = DomainCalcReq {
             items: domain_items,
             voucher_code: req.voucher_code,
-            base_shipping_fee,
+            base_shipping_fee: from_optional_money(&req.base_shipping_fee)?,
             payment_method: req.payment_method,
         };
 
@@ -80,10 +83,10 @@ impl PricingGrpcTrait for PricingGrpcServer {
             .map(|item| {
                 return PriceItemResponse {
                     product_id: item.product_id,
-                    base_price: item.base_price.to_string(),
-                    final_unit_price: item.final_unit_price.to_string(),
+                    base_price: Some(to_money(item.base_price)),
+                    final_unit_price: Some(to_money(item.final_unit_price)),
                     quantity: item.quantity,
-                    line_total: item.line_total.to_string(),
+                    line_total: Some(to_money(item.line_total)),
                     applied_flash_sale: item.applied_flash_sale,
                     applied_discount: item.applied_discount,
                 };
@@ -91,16 +94,52 @@ impl PricingGrpcTrait for PricingGrpcServer {
             .collect();
 
         return Ok(Response::new(CalculatePriceResponse {
-            subtotal: result.subtotal.to_string(),
-            total_discount: result.total_discount.to_string(),
-            voucher_discount: result.voucher_discount.to_string(),
-            final_total: result.final_total.to_string(),
+            subtotal: Some(to_money(result.subtotal)),
+            total_discount: Some(to_money(result.total_discount)),
+            voucher_discount: Some(to_money(result.voucher_discount)),
+            final_total: Some(to_money(result.final_total)),
             applied_voucher: result.applied_voucher,
             items: pb_items,
-            base_shipping_fee: result.base_shipping_fee.to_string(),
-            shipping_discount: result.shipping_discount.to_string(),
-            final_shipping_fee: result.final_shipping_fee.to_string(),
-            payment_discount: result.payment_discount.to_string(),
+            base_shipping_fee: Some(to_money(result.base_shipping_fee)),
+            shipping_discount: Some(to_money(result.shipping_discount)),
+            final_shipping_fee: Some(to_money(result.final_shipping_fee)),
+            payment_discount: Some(to_money(result.payment_discount)),
         }));
+    }
+
+    async fn redeem_voucher(
+        &self,
+        _request: Request<RedeemVoucherRequest>,
+    ) -> Result<Response<RedeemVoucherResponse>, Status> {
+        return Err(Status::unimplemented(
+            "RedeemVoucher lands with the quota ledger in S10",
+        ));
+    }
+
+    async fn release_voucher_redemption(
+        &self,
+        _request: Request<ReleaseVoucherRedemptionRequest>,
+    ) -> Result<Response<ReleaseVoucherRedemptionResponse>, Status> {
+        return Err(Status::unimplemented(
+            "ReleaseVoucherRedemption lands with the quota ledger in S10",
+        ));
+    }
+
+    async fn allocate_flash_sale_stock(
+        &self,
+        _request: Request<AllocateFlashSaleStockRequest>,
+    ) -> Result<Response<AllocateFlashSaleStockResponse>, Status> {
+        return Err(Status::unimplemented(
+            "AllocateFlashSaleStock lands with the quota ledger in S10",
+        ));
+    }
+
+    async fn release_flash_sale_allocation(
+        &self,
+        _request: Request<ReleaseFlashSaleAllocationRequest>,
+    ) -> Result<Response<ReleaseFlashSaleAllocationResponse>, Status> {
+        return Err(Status::unimplemented(
+            "ReleaseFlashSaleAllocation lands with the quota ledger in S10",
+        ));
     }
 }

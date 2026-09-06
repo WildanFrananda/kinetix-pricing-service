@@ -8,6 +8,8 @@ pub mod error;
 pub mod grpc;
 pub mod guards;
 pub mod models;
+pub mod money;
+pub mod proto;
 pub mod repositories;
 pub mod routes;
 pub mod schema;

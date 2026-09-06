@@ -1,14 +1,12 @@
-pub mod shipping_proto {
-    tonic::include_proto!("shipping.v1");
-}
-
 use rust_decimal::Decimal;
-use std::str::FromStr;
-use shipping_proto::shipping_service_client::ShippingServiceClient;
 use tonic::transport::{Channel, Endpoint};
 
+use crate::money::from_money;
+use crate::proto::common::v1::GeoPoint;
+use crate::proto::shipping::v1 as shipping_proto;
 use crate::security::ServiceIdentity;
-use shipping_proto::{EstimateShippingOptionsRequest, LocationCoordinates};
+use shipping_proto::shipping_service_client::ShippingServiceClient;
+use shipping_proto::EstimateShippingOptionsRequest;
 
 #[derive(Debug, Clone)]
 pub struct ShippingOptionResult {
@@ -43,7 +41,7 @@ impl ShippingGrpcClient {
         dest_lat: f64,
         dest_lng: f64,
         total_weight_kg: f64,
-        merchant_id: Option<i64>,
+        _merchant_id: Option<i64>,
     ) -> Result<EstimateShippingResult, String> {
         let identity = ServiceIdentity::load()
             .map_err(|e| return format!("cannot present a client certificate to matching: {}", e))?;
@@ -70,16 +68,16 @@ impl ShippingGrpcClient {
         let mut client = ShippingServiceClient::new(channel);
 
         let request = tonic::Request::new(EstimateShippingOptionsRequest {
-            origin: Some(LocationCoordinates {
+            origin: Some(GeoPoint {
                 latitude: origin_lat,
                 longitude: origin_lng,
             }),
-            destination: Some(LocationCoordinates {
+            destination: Some(GeoPoint {
                 latitude: dest_lat,
                 longitude: dest_lng,
             }),
-            total_weight_kg,
-            merchant_id: merchant_id.unwrap_or(0),
+            total_weight_grams: (total_weight_kg * 1000.0).round() as i64,
+            merchant_principal_id: String::new(),
         });
 
         let response = client
@@ -92,7 +90,10 @@ impl ShippingGrpcClient {
             .options
             .into_iter()
             .map(|opt| {
-                let base_fee = Decimal::from_str(&opt.base_shipping_fee.to_string())
+                let base_fee = opt
+                    .base_shipping_fee
+                    .as_ref()
+                    .and_then(|m| from_money(m).ok())
                     .unwrap_or(Decimal::ZERO);
 
                 return ShippingOptionResult {

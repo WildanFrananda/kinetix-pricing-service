@@ -12,7 +12,7 @@
 FROM rust:1.88-slim-bookworm@sha256:38bc5a86d998772d4aec2348656ed21438d20fcdce2795b56ca434cf21430d89 AS build
 
 RUN apt-get update && apt-get install --no-install-recommends -y \
-        libpq-dev pkg-config ca-certificates \
+        libpq-dev pkg-config ca-certificates git \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
@@ -27,7 +27,11 @@ RUN mkdir -p src \
     && rm -rf src
 
 COPY build.rs ./
-COPY proto ./proto
+COPY bin ./bin
+
+# The wire contracts, at the commit bin/sync-contracts pins. Fetched rather than copied: this
+# repository tracks no .proto at all, which is what S9's exit criterion measures.
+RUN sh bin/sync-contracts
 COPY src ./src
 COPY migrations ./migrations
 COPY Rocket.toml ./
