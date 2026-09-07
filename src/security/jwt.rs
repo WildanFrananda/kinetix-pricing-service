@@ -33,6 +33,7 @@ pub struct JwtVerifier {
     issuer: String,
     audience: String,
     keys: RwLock<HashMap<String, DecodingKey>>,
+    http: reqwest::Client,
 }
 
 #[derive(Debug)]
@@ -51,11 +52,26 @@ impl JwtVerifier {
         let audience = std::env::var("JWT_AUDIENCE")
             .map_err(|_| "JWT_AUDIENCE is required and has no default".to_string())?;
 
-        return Ok(Self { jwks_url, issuer, audience, keys: RwLock::new(HashMap::new()) });
+        let http = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(2))
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+            .map_err(|e| format!("cannot build the JWKS HTTP client: {e}"))?;
+
+        return Ok(Self {
+            jwks_url,
+            issuer,
+            audience,
+            keys: RwLock::new(HashMap::new()),
+            http,
+        });
     }
 
     pub async fn refresh(&self) -> Result<usize, String> {
-        let body: Jwks = reqwest::get(&self.jwks_url)
+        let body: Jwks = self
+            .http
+            .get(&self.jwks_url)
+            .send()
             .await
             .map_err(|e| format!("cannot reach {}: {e}", self.jwks_url))?
             .json()
@@ -77,7 +93,10 @@ impl JwtVerifier {
         }
 
         let count = fresh.len();
-        *self.keys.write().map_err(|_| "the key cache is poisoned".to_string())? = fresh;
+        *self
+            .keys
+            .write()
+            .map_err(|_| "the key cache is poisoned".to_string())? = fresh;
         return Ok(count);
     }
 
@@ -101,7 +120,8 @@ impl JwtVerifier {
         validation.set_audience(&[self.audience.as_str()]);
         validation.validate_exp = true;
 
-        let data = decode::<AccessClaims>(token, &key, &validation).map_err(|_| JwtError::Invalid)?;
+        let data =
+            decode::<AccessClaims>(token, &key, &validation).map_err(|_| JwtError::Invalid)?;
 
         if data.claims.token_use != "access" {
             return Err(JwtError::Invalid);
