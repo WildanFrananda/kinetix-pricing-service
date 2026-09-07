@@ -217,8 +217,9 @@ fn service(
 #[tokio::test]
 async fn a_flash_sale_wins_over_a_discount_on_the_same_item() {
     let now = Utc::now();
+    let flash_id = Uuid::new_v4();
     let flash = FlashSale {
-        id: Uuid::new_v4(),
+        id: flash_id,
         title: "flash".to_string(),
         product_id: "SKU-1".to_string(),
         flash_price: dec!(49.99),
@@ -246,7 +247,9 @@ async fn a_flash_sale_wins_over_a_discount_on_the_same_item() {
         .expect("calculate_price should succeed");
 
     assert_eq!(res.items[0].final_unit_price, dec!(49.99));
-    assert_eq!(res.items[0].applied_flash_sale.as_deref(), Some("flash"));
+    // The id, not the title. The checkout saga allocates this sale's stock against it, and a
+    // title cannot be allocated against.
+    assert_eq!(res.items[0].applied_flash_sale.as_deref(), Some(flash_id.to_string().as_str()));
     // The 10% discount must not also apply — a flash sale suppresses it.
     assert!(res.items[0].applied_discount.is_none());
 }

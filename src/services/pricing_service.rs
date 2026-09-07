@@ -80,7 +80,7 @@ where
             if let Ok(Some(flash)) = self.flash_sale_repo.find_active_for_product(pool, &item.product_id).await {
                 if flash.flash_price < final_unit_price {
                     final_unit_price = flash.flash_price;
-                    applied_flash_sale = Some(flash.title.clone());
+                    applied_flash_sale = Some(flash.id.to_string());
                 }
             }
 
