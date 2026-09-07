@@ -1,5 +1,6 @@
 use tonic::{Request, Status};
 
+use crate::observability::request_id;
 use super::spiffe::peer_service;
 
 #[derive(Clone)]
@@ -35,9 +36,19 @@ impl PeerGuard {
         };
 
         if !self.allowed.iter().any(|a| a == &peer) {
-            tracing::warn!(peer = %peer, "refused a gRPC call from a service that is not on the allow list");
+            tracing::warn!(
+                peer = %peer,
+                request_id = request_id(&request).as_deref().unwrap_or("-"),
+                "refused a gRPC call from a service that is not on the allow list"
+            );
             return Err(Status::permission_denied("this service is not permitted to call pricing"));
         }
+
+        tracing::info!(
+            peer = %peer,
+            request_id = request_id(&request).as_deref().unwrap_or("-"),
+            "gRPC call accepted"
+        );
 
         return Ok(request);
     }

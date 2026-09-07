@@ -9,6 +9,7 @@ pub mod grpc;
 pub mod guards;
 pub mod models;
 pub mod money;
+pub mod observability;
 pub mod proto;
 pub mod repositories;
 pub mod routes;
