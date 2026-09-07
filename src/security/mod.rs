@@ -1,3 +1,4 @@
+pub mod jwks_breaker;
 pub mod jwt;
 pub mod peer_guard;
 pub mod mtls;

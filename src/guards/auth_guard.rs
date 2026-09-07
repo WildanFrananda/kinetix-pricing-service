@@ -2,14 +2,9 @@ use rocket::http::Status;
 use rocket::request::{FromRequest, Outcome, Request};
 
 use crate::error::AppError;
-use crate::security::jwt::{AccessClaims, JwtVerifier};
+use crate::observability::request_id::REQUEST_ID_KEY;
+use crate::security::jwt::{AccessClaims, JwtError, JwtVerifier};
 
-/// Who is calling, named the way every other service names them.
-///
-/// `uid` is deliberately absent. It is identity's account id, and it was carried here while
-/// nothing read it — which is exactly how five other services came to store two id spaces in one
-/// column. Pricing keys nothing on an account, and a field nobody needs is one somebody
-/// eventually stores.
 pub struct AuthenticatedCaller {
     pub principal_id: String,
     pub email: String,
@@ -42,10 +37,20 @@ async fn verify_bearer(req: &Request<'_>) -> Result<AccessClaims, (Status, AppEr
         return Err((Status::Unauthorized, AppError::Unauthorized));
     }
 
-    verifier
-        .verify_access(token)
-        .await
-        .map_err(|_| (Status::Unauthorized, AppError::Unauthorized))
+    match verifier.verify_access(token).await {
+        Ok(claims) => return Ok(claims),
+        Err(JwtError::Unavailable(reason)) => {
+            tracing::error!(
+                request_id = req.headers().get_one(REQUEST_ID_KEY).unwrap_or("-"),
+                error = %reason,
+                "cannot verify a token because identity's JWKS is unreachable"
+            );
+            return Err((Status::ServiceUnavailable, AppError::Unavailable(reason)));
+        }
+        Err(JwtError::Missing) | Err(JwtError::Invalid) => {
+            return Err((Status::Unauthorized, AppError::Unauthorized))
+        }
+    }
 }
 
 #[rocket::async_trait]

@@ -2,6 +2,11 @@ use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::RwLock;
+use std::time::{Duration, Instant};
+
+use crate::security::jwks_breaker::JwksBreaker;
+
+const JWKS_COOLDOWN: Duration = Duration::from_secs(15);
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct AccessClaims {
@@ -34,6 +39,8 @@ pub struct JwtVerifier {
     audience: String,
     keys: RwLock<HashMap<String, DecodingKey>>,
     http: reqwest::Client,
+    breaker: JwksBreaker,
+    refresh_lock: tokio::sync::Mutex<()>,
 }
 
 #[derive(Debug)]
@@ -53,8 +60,8 @@ impl JwtVerifier {
             .map_err(|_| "JWT_AUDIENCE is required and has no default".to_string())?;
 
         let http = reqwest::Client::builder()
-            .connect_timeout(std::time::Duration::from_secs(2))
-            .timeout(std::time::Duration::from_secs(5))
+            .connect_timeout(Duration::from_secs(2))
+            .timeout(Duration::from_secs(5))
             .build()
             .map_err(|e| format!("cannot build the JWKS HTTP client: {e}"))?;
 
@@ -64,10 +71,39 @@ impl JwtVerifier {
             audience,
             keys: RwLock::new(HashMap::new()),
             http,
+            breaker: JwksBreaker::new(JWKS_COOLDOWN),
+            refresh_lock: tokio::sync::Mutex::new(()),
         });
     }
 
     pub async fn refresh(&self) -> Result<usize, String> {
+        if let Some(remaining) = self.breaker.cooldown_remaining() {
+            return Err(self.cooldown_message(remaining));
+        }
+
+        let queued_at = Instant::now();
+        let _flight = self.refresh_lock.lock().await;
+
+        if self.breaker.refreshed_since(queued_at) {
+            return self.key_count();
+        }
+        if let Some(remaining) = self.breaker.cooldown_remaining() {
+            return Err(self.cooldown_message(remaining));
+        }
+
+        match self.fetch_keys().await {
+            Ok(count) => {
+                self.breaker.record_success();
+                return Ok(count);
+            }
+            Err(e) => {
+                self.breaker.record_failure();
+                return Err(e);
+            }
+        }
+    }
+
+    async fn fetch_keys(&self) -> Result<usize, String> {
         let body: Jwks = self
             .http
             .get(&self.jwks_url)
@@ -98,6 +134,22 @@ impl JwtVerifier {
             .write()
             .map_err(|_| "the key cache is poisoned".to_string())? = fresh;
         return Ok(count);
+    }
+
+    fn key_count(&self) -> Result<usize, String> {
+        let guard = self
+            .keys
+            .read()
+            .map_err(|_| "the key cache is poisoned".to_string())?;
+        return Ok(guard.len());
+    }
+
+    fn cooldown_message(&self, remaining: Duration) -> String {
+        return format!(
+            "{} failed recently and is not being called again for {:.1}s",
+            self.jwks_url,
+            remaining.as_secs_f32()
+        );
     }
 
     pub async fn verify_access(&self, token: &str) -> Result<AccessClaims, JwtError> {

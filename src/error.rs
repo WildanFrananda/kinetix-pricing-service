@@ -26,6 +26,9 @@ pub enum AppError {
 
     #[error("Unauthorized access")]
     Unauthorized,
+
+    #[error("Upstream unavailable: {0}")]
+    Unavailable(String),
 }
 
 impl From<diesel_async::pooled_connection::deadpool::PoolError> for AppError {
@@ -87,6 +90,19 @@ impl<'r> Responder<'r, 'static> for AppError {
             AppError::NotFound(msg) => (Status::NotFound, msg.clone()),
             AppError::BadRequest(msg) => (Status::BadRequest, msg.clone()),
             AppError::Unauthorized => (Status::Unauthorized, "Unauthorized".to_string()),
+            AppError::Unavailable(e) => {
+                tracing::error!(
+                    request_id = request_id(req),
+                    error = %e,
+                    "a dependency pricing needs was not answering"
+                );
+                (
+                    Status::ServiceUnavailable,
+                    "pricing depends on a service that is not answering right now. Nothing was \
+                     changed; try again."
+                        .to_string(),
+                )
+            }
         };
 
         let err_json = Json(ErrorResponse::new(
