@@ -9,10 +9,7 @@ use crate::DbPool;
 pub fn health_check() -> Value {
     return serde_json::json!({
         "status": "ok",
-        "service": "kinetix-pricing-service",
-        "framework": "Rocket 0.5 (Rust)",
-        "mode": "production",
-        "port": 6000
+        "service": "kinetix-pricing-service"
     });
 }
 
@@ -21,14 +18,8 @@ pub async fn health_ready(pool: &State<DbPool>) -> (Status, Value) {
     let mut connection = match pool.get().await {
         Ok(connection) => connection,
         Err(error) => {
-            return (
-                Status::ServiceUnavailable,
-                serde_json::json!({
-                    "status": "unavailable",
-                    "database": "unreachable",
-                    "detail": error.to_string()
-                }),
-            );
+            tracing::error!(error = %error, "readiness: the pool could not hand out a connection");
+            return (Status::ServiceUnavailable, unavailable());
         }
     };
 
@@ -40,14 +31,12 @@ pub async fn health_ready(pool: &State<DbPool>) -> (Status, Value) {
             );
         }
         Err(error) => {
-            return (
-                Status::ServiceUnavailable,
-                serde_json::json!({
-                    "status": "unavailable",
-                    "database": "unreachable",
-                    "detail": error.to_string()
-                }),
-            );
+            tracing::error!(error = %error, "readiness: SELECT 1 failed");
+            return (Status::ServiceUnavailable, unavailable());
         }
     }
+}
+
+fn unavailable() -> Value {
+    return serde_json::json!({ "status": "unavailable", "database": "unreachable" });
 }
