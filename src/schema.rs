@@ -50,8 +50,33 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    voucher_redemptions (id) {
+        id -> Uuid,
+        voucher_code -> VarChar,
+        order_number -> VarChar,
+        customer_principal_id -> VarChar,
+        released_at -> Nullable<Timestamptz>,
+        created_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
+    flash_sale_allocations (id) {
+        id -> Uuid,
+        flash_sale_id -> Uuid,
+        product_id -> VarChar,
+        quantity -> Int4,
+        order_number -> VarChar,
+        released_at -> Nullable<Timestamptz>,
+        created_at -> Timestamptz,
+    }
+}
+
 diesel::allow_tables_to_appear_in_same_query!(
     discounts,
     vouchers,
     flash_sales,
+    voucher_redemptions,
+    flash_sale_allocations,
 );

@@ -1,10 +1,14 @@
 use tonic::{Request, Response, Status};
 
+use uuid::Uuid;
+
 use crate::models::{CalculatePriceRequest as DomainCalcReq, PriceItemRequest as DomainItemReq};
 use crate::money::{from_money, from_optional_money, to_money};
+use crate::repositories::{QuotaOutcome, QuotaRepository};
 use crate::services::PricingService;
 use crate::DbPool;
 
+use crate::proto::common::v1::ErrorDetail;
 use crate::proto::pricing::v1 as proto;
 
 use proto::pricing_service_server::PricingService as PricingGrpcTrait;
@@ -109,37 +113,220 @@ impl PricingGrpcTrait for PricingGrpcServer {
 
     async fn redeem_voucher(
         &self,
-        _request: Request<RedeemVoucherRequest>,
+        request: Request<RedeemVoucherRequest>,
     ) -> Result<Response<RedeemVoucherResponse>, Status> {
-        return Err(Status::unimplemented(
-            "RedeemVoucher lands with the quota ledger in S10",
-        ));
+        let req = request.into_inner();
+
+        if req.voucher_code.trim().is_empty() || req.order_number.trim().is_empty() {
+            return Ok(Response::new(RedeemVoucherResponse {
+                success: false,
+                already_redeemed: false,
+                remaining_quota: 0,
+                error: Some(invalid_argument(
+                    "a voucher code and an order number are both required",
+                )),
+            }));
+        }
+
+        let outcome = QuotaRepository::redeem_voucher(
+            &self.pool,
+            &req.voucher_code,
+            &req.order_number,
+            &req.customer_principal_id,
+        )
+        .await
+        .map_err(|e| Status::internal(format!("could not redeem the voucher: {e}")))?;
+
+        return Ok(Response::new(match outcome {
+            QuotaOutcome::Applied { remaining } => RedeemVoucherResponse {
+                success: true,
+                already_redeemed: false,
+                remaining_quota: remaining,
+                error: None,
+            },
+            QuotaOutcome::AlreadyDone { remaining } => RedeemVoucherResponse {
+                success: true,
+                already_redeemed: true,
+                remaining_quota: remaining,
+                error: None,
+            },
+            QuotaOutcome::Exhausted => RedeemVoucherResponse {
+                success: false,
+                already_redeemed: false,
+                remaining_quota: 0,
+                error: Some(error_detail(
+                    "VOUCHER_QUOTA_EXHAUSTED",
+                    "this voucher has no quota left",
+                )),
+            },
+            QuotaOutcome::NotFound => RedeemVoucherResponse {
+                success: false,
+                already_redeemed: false,
+                remaining_quota: 0,
+                error: Some(error_detail("VOUCHER_NOT_FOUND", "no such voucher")),
+            },
+        }));
     }
 
     async fn release_voucher_redemption(
         &self,
-        _request: Request<ReleaseVoucherRedemptionRequest>,
+        request: Request<ReleaseVoucherRedemptionRequest>,
     ) -> Result<Response<ReleaseVoucherRedemptionResponse>, Status> {
-        return Err(Status::unimplemented(
-            "ReleaseVoucherRedemption lands with the quota ledger in S10",
-        ));
+        let req = request.into_inner();
+
+        if req.voucher_code.trim().is_empty() || req.order_number.trim().is_empty() {
+            return Ok(Response::new(ReleaseVoucherRedemptionResponse {
+                success: false,
+                already_released: false,
+                remaining_quota: 0,
+                error: Some(invalid_argument(
+                    "a voucher code and an order number are both required",
+                )),
+            }));
+        }
+
+        let outcome =
+            QuotaRepository::release_voucher(&self.pool, &req.voucher_code, &req.order_number)
+                .await
+                .map_err(|e| {
+                    Status::internal(format!("could not release the redemption: {e}"))
+                })?;
+
+        return Ok(Response::new(match outcome {
+            QuotaOutcome::Applied { remaining } => ReleaseVoucherRedemptionResponse {
+                success: true,
+                already_released: false,
+                remaining_quota: remaining,
+                error: None,
+            },
+            QuotaOutcome::AlreadyDone { remaining } => ReleaseVoucherRedemptionResponse {
+                success: true,
+                already_released: true,
+                remaining_quota: remaining,
+                error: None,
+            },
+            QuotaOutcome::Exhausted | QuotaOutcome::NotFound => {
+                ReleaseVoucherRedemptionResponse {
+                    success: false,
+                    already_released: false,
+                    remaining_quota: 0,
+                    error: Some(error_detail("VOUCHER_NOT_FOUND", "no such voucher")),
+                }
+            }
+        }));
     }
 
     async fn allocate_flash_sale_stock(
         &self,
-        _request: Request<AllocateFlashSaleStockRequest>,
+        request: Request<AllocateFlashSaleStockRequest>,
     ) -> Result<Response<AllocateFlashSaleStockResponse>, Status> {
-        return Err(Status::unimplemented(
-            "AllocateFlashSaleStock lands with the quota ledger in S10",
-        ));
+        let req = request.into_inner();
+
+        let Ok(sale_id) = Uuid::parse_str(&req.flash_sale_id) else {
+            return Ok(Response::new(AllocateFlashSaleStockResponse {
+                success: false,
+                already_allocated: false,
+                remaining_stock: 0,
+                error: Some(invalid_argument("flash_sale_id is not a UUID")),
+            }));
+        };
+
+        let outcome = QuotaRepository::allocate_flash_sale(
+            &self.pool,
+            sale_id,
+            &req.product_id,
+            req.quantity,
+            &req.order_number,
+        )
+        .await
+        .map_err(|e| Status::internal(format!("could not allocate flash-sale stock: {e}")))?;
+
+        return Ok(Response::new(match outcome {
+            QuotaOutcome::Applied { remaining } => AllocateFlashSaleStockResponse {
+                success: true,
+                already_allocated: false,
+                remaining_stock: remaining,
+                error: None,
+            },
+            QuotaOutcome::AlreadyDone { remaining } => AllocateFlashSaleStockResponse {
+                success: true,
+                already_allocated: true,
+                remaining_stock: remaining,
+                error: None,
+            },
+            QuotaOutcome::Exhausted => AllocateFlashSaleStockResponse {
+                success: false,
+                already_allocated: false,
+                remaining_stock: 0,
+                error: Some(error_detail(
+                    "FLASH_SALE_STOCK_EXHAUSTED",
+                    "this flash sale has not got that many units left",
+                )),
+            },
+            QuotaOutcome::NotFound => AllocateFlashSaleStockResponse {
+                success: false,
+                already_allocated: false,
+                remaining_stock: 0,
+                error: Some(error_detail("FLASH_SALE_NOT_FOUND", "no such flash sale")),
+            },
+        }));
     }
 
     async fn release_flash_sale_allocation(
         &self,
-        _request: Request<ReleaseFlashSaleAllocationRequest>,
+        request: Request<ReleaseFlashSaleAllocationRequest>,
     ) -> Result<Response<ReleaseFlashSaleAllocationResponse>, Status> {
-        return Err(Status::unimplemented(
-            "ReleaseFlashSaleAllocation lands with the quota ledger in S10",
-        ));
+        let req = request.into_inner();
+
+        let Ok(sale_id) = Uuid::parse_str(&req.flash_sale_id) else {
+            return Ok(Response::new(ReleaseFlashSaleAllocationResponse {
+                success: false,
+                already_released: false,
+                remaining_stock: 0,
+                error: Some(invalid_argument("flash_sale_id is not a UUID")),
+            }));
+        };
+
+        let outcome =
+            QuotaRepository::release_flash_sale(&self.pool, sale_id, &req.order_number)
+                .await
+                .map_err(|e| {
+                    Status::internal(format!("could not release the allocation: {e}"))
+                })?;
+
+        return Ok(Response::new(match outcome {
+            QuotaOutcome::Applied { remaining } => ReleaseFlashSaleAllocationResponse {
+                success: true,
+                already_released: false,
+                remaining_stock: remaining,
+                error: None,
+            },
+            QuotaOutcome::AlreadyDone { remaining } => ReleaseFlashSaleAllocationResponse {
+                success: true,
+                already_released: true,
+                remaining_stock: remaining,
+                error: None,
+            },
+            QuotaOutcome::Exhausted | QuotaOutcome::NotFound => {
+                ReleaseFlashSaleAllocationResponse {
+                    success: false,
+                    already_released: false,
+                    remaining_stock: 0,
+                    error: Some(error_detail("FLASH_SALE_NOT_FOUND", "no such flash sale")),
+                }
+            }
+        }));
     }
+}
+
+fn error_detail(code: &str, message: &str) -> ErrorDetail {
+    return ErrorDetail {
+        error_code: code.to_string(),
+        message: message.to_string(),
+        field_violations: Vec::new(),
+    };
+}
+
+fn invalid_argument(message: &str) -> ErrorDetail {
+    return error_detail("INVALID_ARGUMENT", message);
 }
