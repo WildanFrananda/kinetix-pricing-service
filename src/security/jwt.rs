@@ -51,7 +51,7 @@ impl JwtVerifier {
         let audience = std::env::var("JWT_AUDIENCE")
             .map_err(|_| "JWT_AUDIENCE is required and has no default".to_string())?;
 
-        Ok(Self { jwks_url, issuer, audience, keys: RwLock::new(HashMap::new()) })
+        return Ok(Self { jwks_url, issuer, audience, keys: RwLock::new(HashMap::new()) });
     }
 
     pub async fn refresh(&self) -> Result<usize, String> {
@@ -78,7 +78,7 @@ impl JwtVerifier {
 
         let count = fresh.len();
         *self.keys.write().map_err(|_| "the key cache is poisoned".to_string())? = fresh;
-        Ok(count)
+        return Ok(count);
     }
 
     pub async fn verify_access(&self, token: &str) -> Result<AccessClaims, JwtError> {
@@ -107,7 +107,7 @@ impl JwtVerifier {
             return Err(JwtError::Invalid);
         }
 
-        Ok(data.claims)
+        return Ok(data.claims);
     }
 
     fn lookup(&self, kid: &str) -> Result<Option<DecodingKey>, JwtError> {
@@ -115,6 +115,6 @@ impl JwtVerifier {
             .keys
             .read()
             .map_err(|_| JwtError::Unavailable("the key cache is poisoned".to_string()))?;
-        Ok(guard.get(kid).cloned())
+        return Ok(guard.get(kid).cloned());
     }
 }

@@ -108,9 +108,9 @@ impl QuotaRepository {
                     }
                 }
 
-                Ok(QuotaOutcome::Applied {
+                return Ok(QuotaOutcome::Applied {
                     remaining: quota_value - used_after,
-                })
+                });
             }
             .scope_boxed()
         })
@@ -182,9 +182,9 @@ impl QuotaRepository {
                 .optional()?
                 .unwrap_or(0);
 
-                Ok(QuotaOutcome::Applied {
+                return Ok(QuotaOutcome::Applied {
                     remaining: quota_value - used_after,
-                })
+                });
             }
             .scope_boxed()
         })
@@ -288,9 +288,9 @@ impl QuotaRepository {
                     }
                 }
 
-                Ok(QuotaOutcome::Applied {
+                return Ok(QuotaOutcome::Applied {
                     remaining: limit - sold_after,
-                })
+                });
             }
             .scope_boxed()
         })
@@ -361,9 +361,9 @@ impl QuotaRepository {
                 .optional()?
                 .unwrap_or(0);
 
-                Ok(QuotaOutcome::Applied {
+                return Ok(QuotaOutcome::Applied {
                     remaining: limit - sold_after,
-                })
+                });
             }
             .scope_boxed()
         })

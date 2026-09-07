@@ -21,7 +21,7 @@ impl PeerGuard {
         if allowed.is_empty() {
             return Err("KINETIX_GRPC_ALLOWED_PEERS is set but names no services".to_string());
         }
-        Ok(Self { allowed })
+        return Ok(Self { allowed });
     }
 
     pub fn check<T>(&self, request: Request<T>) -> Result<Request<T>, Status> {
@@ -39,6 +39,6 @@ impl PeerGuard {
             return Err(Status::permission_denied("this service is not permitted to call pricing"));
         }
 
-        Ok(request)
+        return Ok(request);
     }
 }

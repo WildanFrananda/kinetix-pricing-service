@@ -19,7 +19,7 @@ pub fn peer_spiffe_id<T>(request: &Request<T>) -> Option<String> {
             }
         }
     }
-    None
+    return None;
 }
 
 pub fn peer_service<T>(request: &Request<T>) -> Option<String> {

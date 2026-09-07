@@ -20,7 +20,7 @@ pub struct VoucherRedemption {
 
 impl VoucherRedemption {
     pub fn is_held(&self) -> bool {
-        self.released_at.is_none()
+        return self.released_at.is_none();
     }
 }
 
@@ -39,6 +39,6 @@ pub struct FlashSaleAllocation {
 
 impl FlashSaleAllocation {
     pub fn is_held(&self) -> bool {
-        self.released_at.is_none()
+        return self.released_at.is_none();
     }
 }

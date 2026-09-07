@@ -41,7 +41,7 @@ impl ServiceIdentity {
             }
         }
 
-        Ok(Self { cert_pem, key_pem, ca_pem })
+        return Ok(Self { cert_pem, key_pem, ca_pem });
     }
 
     pub fn server_tls(&self) -> ServerTlsConfig {

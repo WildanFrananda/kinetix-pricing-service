@@ -4,16 +4,21 @@ use rocket::request::{FromRequest, Outcome, Request};
 use crate::error::AppError;
 use crate::security::jwt::{AccessClaims, JwtVerifier};
 
+/// Who is calling, named the way every other service names them.
+///
+/// `uid` is deliberately absent. It is identity's account id, and it was carried here while
+/// nothing read it — which is exactly how five other services came to store two id spaces in one
+/// column. Pricing keys nothing on an account, and a field nobody needs is one somebody
+/// eventually stores.
 pub struct AuthenticatedCaller {
     pub principal_id: String,
-    pub user_id: i64,
     pub email: String,
     pub role: String,
 }
 
 impl From<AccessClaims> for AuthenticatedCaller {
     fn from(c: AccessClaims) -> Self {
-        Self { principal_id: c.sub, user_id: c.uid, email: c.email, role: c.role }
+        return Self { principal_id: c.sub, email: c.email, role: c.role };
     }
 }
 
@@ -49,15 +54,14 @@ impl<'r> FromRequest<'r> for AuthenticatedCaller {
 
     async fn from_request(req: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         match verify_bearer(req).await {
-            Ok(claims) => Outcome::Success(claims.into()),
-            Err((status, err)) => Outcome::Error((status, err)),
+            Ok(claims) => return Outcome::Success(claims.into()),
+            Err((status, err)) => return Outcome::Error((status, err)),
         }
     }
 }
 
 pub struct AdminOrMerchantGuard {
     pub principal_id: String,
-    pub user_id: i64,
     pub role: String,
 }
 
@@ -78,10 +82,9 @@ impl<'r> FromRequest<'r> for AdminOrMerchantGuard {
             ));
         }
 
-        Outcome::Success(AdminOrMerchantGuard {
+        return Outcome::Success(AdminOrMerchantGuard {
             principal_id: claims.sub,
-            user_id: claims.uid,
             role: claims.role,
-        })
+        });
     }
 }
