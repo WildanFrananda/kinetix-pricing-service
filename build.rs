@@ -19,7 +19,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .compile(
             &[
                 contracts.join("pricing/v1/pricing.proto").to_str().unwrap(),
-                contracts.join("shipping/v1/shipping.proto").to_str().unwrap(),
             ],
             &[contracts.to_str().unwrap()],
         )?;

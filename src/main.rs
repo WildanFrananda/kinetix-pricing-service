@@ -11,6 +11,7 @@ use kinetix_pricing_service::security::jwt::JwtVerifier;
 use kinetix_pricing_service::observability::RequestIdFairing;
 use kinetix_pricing_service::security::{PeerGuard, ServiceIdentity};
 use kinetix_pricing_service::routes::{
+    catchers::{internal_error, not_found, other, unprocessable},
     discount_routes::{create_discount, list_discounts},
     flash_sale_routes::{create_flash_sale, get_flash_sale_for_product},
     health_routes::{health_check, health_ready},
@@ -98,6 +99,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rest_server = async move {
         let _rocket = rocket::build()
             .attach(RequestIdFairing)
+            .register("/", catchers![not_found, unprocessable, internal_error, other])
             .manage(db_pool)
             .manage(verifier)
             .mount(
