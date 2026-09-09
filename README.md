@@ -8,6 +8,7 @@ High-performance microservice written in **Rust 1.98 (Rocket 0.5 & Tonic gRPC & 
 
 - **Port `:6000` (HTTP REST Admin)**:
   - Admin/Merchant promo management endpoints (`POST /api/v1/discounts`, `POST /api/v1/vouchers`, `POST /api/v1/vouchers/apply`, `POST /api/v1/flash-sales`, `GET /health`).
+  - `GET /metrics`: Prometheus text exposition, unauthenticated, named to the estate's contract (`kinetix_http_requests_total`, `kinetix_http_request_duration_seconds`, `kinetix_grpc_server_calls_total`, `kinetix_build_info`). Route labels are the matched template, never the path.
   - Protected by `AdminOrMerchantGuard` (validates `X-User-Role: ADMIN` or `X-User-Role: MERCHANT` from Kong API Gateway).
 - **Port `:50054` (gRPC Protobuf)**:
   - High-performance inter-service price calculation server (`PricingService` RPC `CalculatePrice`).

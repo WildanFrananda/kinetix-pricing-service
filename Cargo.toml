@@ -35,8 +35,19 @@ rust_decimal_macros = "1.35"
 uuid = { version = "1.8", features = ["v4", "serde"] }
 thiserror = "1.0"
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 dotenvy = "0.15"
+
+# Text exposition only. The protobuf exposition format is a second encoder, a second wire format
+# and a second dependency tree, and no scraper in this estate asks for it.
+prometheus = { version = "0.14", default-features = false }
+
+# The gRPC metric layer sits inside tonic's own tower stack, so it has to speak the versions tonic
+# 0.11 links: http 0.2 and http-body 0.4, not the 1.x pair reqwest brings in beside them.
+http = "0.2"
+http-body = "0.4"
+tower-layer = "0.3"
+tower-service = "0.3"
 
 [build-dependencies]
 tonic-build = "0.11"
@@ -44,3 +55,8 @@ protoc-bin-vendored = "3.0"
 
 [dev-dependencies]
 rocket = { version = "0.5.1", features = ["json"] }
+# Reads the descriptor set build.rs writes, so the gRPC metric labels are checked against the wire
+# contract instead of against a list somebody remembered to update.
+prost-types = "0.12"
+# Lets a test serve tonic on a port the OS picked, so two test binaries never fight over one.
+tokio-stream = { version = "0.1", features = ["net"] }

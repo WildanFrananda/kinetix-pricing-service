@@ -3,6 +3,13 @@ address = "0.0.0.0"
 port = 6000
 log_level = "normal"
 
+# compose gives this container 30 seconds to stop. Rocket's stock 2s grace and 3s mercy would cut a
+# price calculation that is still waiting on Postgres; 10 and 5 let it finish and still leave the
+# process room to exit well inside the grace period.
+[default.shutdown]
+grace = 10
+mercy = 5
+
 [development]
 address = "0.0.0.0"
 port = 6000

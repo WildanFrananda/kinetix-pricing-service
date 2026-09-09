@@ -1,5 +1,20 @@
+pub mod grpc_labels;
+pub mod grpc_metrics_body;
+pub mod grpc_metrics_layer;
+pub mod grpc_metrics_service;
+pub mod json_logging;
+pub mod metrics;
+pub mod metrics_fairing;
 pub mod request_id;
 pub mod request_id_fairing;
+pub mod request_start;
+pub mod route_template;
+pub mod shutdown_signal;
 
+pub use grpc_metrics_layer::GrpcMetricsLayer;
+pub use metrics::Metrics;
+pub use metrics_fairing::MetricsFairing;
 pub use request_id::{request_id, REQUEST_ID_KEY};
 pub use request_id_fairing::RequestIdFairing;
+pub use route_template::route_template;
+pub use shutdown_signal::ShutdownSignal;
