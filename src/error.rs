@@ -1,19 +1,22 @@
 use rocket::http::Status;
-use rocket::response::{self, Responder, Response};
+use rocket::response::{self, Responder, Response, Result};
 use rocket::serde::json::Json;
+use rocket::Request;
 use serde::Serialize;
 use thiserror::Error;
+use diesel::result::Error;
+use diesel_async::pooled_connection::deadpool::PoolError;
 
 use crate::observability::request_id::REQUEST_ID_KEY;
 
-fn request_id<'r>(request: &'r rocket::Request<'_>) -> &'r str {
+fn request_id<'r>(request: &'r Request<'_>) -> &'r str {
     return request.headers().get_one(REQUEST_ID_KEY).unwrap_or("-");
 }
 
 #[derive(Error, Debug)]
 pub enum AppError {
     #[error("Database error: {0}")]
-    Database(#[from] diesel::result::Error),
+    Database(#[from] Error),
 
     #[error("Database connection pool error: {0}")]
     Pool(String),
@@ -31,8 +34,8 @@ pub enum AppError {
     Unavailable(String),
 }
 
-impl From<diesel_async::pooled_connection::deadpool::PoolError> for AppError {
-    fn from(err: diesel_async::pooled_connection::deadpool::PoolError) -> Self {
+impl From<PoolError> for AppError {
+    fn from(err: PoolError) -> Self {
         return AppError::Pool(err.to_string());
     }
 }
@@ -46,7 +49,7 @@ pub struct ErrorResponse {
 }
 
 impl ErrorResponse {
-    pub fn new(error: &str, message: &str, request: &rocket::Request<'_>) -> Self {
+    pub fn new(error: &str, message: &str, request: &Request<'_>) -> Self {
         return Self {
             error: error.to_string(),
             message: message.to_string(),
@@ -60,7 +63,7 @@ impl ErrorResponse {
 }
 
 impl<'r> Responder<'r, 'static> for AppError {
-    fn respond_to(self, req: &'r rocket::Request<'_>) -> response::Result<'static> {
+    fn respond_to(self, req: &'r rocket::Request<'_>) -> Result<'static> {
         let (status, message) = match &self {
             AppError::Database(e) => {
                 tracing::error!(

@@ -1,8 +1,9 @@
 use rocket::http::{Header, Status};
-use rocket::local::blocking::Client;
+use rocket::local::blocking::{Client, LocalResponse};
 use rocket::serde::json::Json;
 use rocket::{catchers, get, routes};
 use serde_json::Value;
+use diesel::result::Error;
 
 use kinetix_pricing_service::error::{AppError, ErrorResponse};
 use kinetix_pricing_service::routes::catchers::{internal_error, not_found, other, unprocessable};
@@ -11,7 +12,7 @@ const ID: &str = "kinetix-trace-under-test";
 
 #[get("/boom/database")]
 fn boom_database() -> Result<&'static str, AppError> {
-    return Err(AppError::Database(diesel::result::Error::NotFound));
+    return Err(AppError::Database(Error::NotFound));
 }
 
 #[get("/boom/pool")]
@@ -58,7 +59,7 @@ fn client() -> Client {
     return Client::tracked(rocket).expect("the test rocket did not build");
 }
 
-fn body_of(response: rocket::local::blocking::LocalResponse<'_>) -> Value {
+fn body_of(response: LocalResponse<'_>) -> Value {
     let raw = response
         .into_string()
         .expect("the error response had no body");

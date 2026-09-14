@@ -139,7 +139,6 @@ fn percentage_voucher_discount_is_capped_by_max_discount() {
     let evaluator = DefaultVoucherEvaluator;
     let v = voucher(dec!(50.00), "PERCENTAGE", dec!(0.00), Some(dec!(25000.00)));
 
-    // 50% of 100000 is 50000, but the voucher caps its own payout at 25000.
     assert_eq!(evaluator.calculate_discount(&v, dec!(100000.00)), dec!(25000.00));
 }
 
@@ -158,8 +157,6 @@ fn an_ineligible_voucher_pays_out_nothing() {
 
     assert_eq!(evaluator.calculate_discount(&v, dec!(150.00)), dec!(0.00));
 }
-
-// ── the service, with faked repositories ────────────────────────────────────────────────────
 
 struct FakeDiscounts(Vec<Discount>);
 struct FakeVouchers(Option<Voucher>);
@@ -195,7 +192,6 @@ impl FlashSaleRepositoryPort for FakeFlashSales {
     }
 }
 
-// deadpool connects lazily, so this pool is never opened. The fakes above ignore it entirely.
 fn unconnected_pool() -> DbPool {
     return create_pool("postgres://unused:unused@127.0.0.1:1/unused");
 }
@@ -247,10 +243,7 @@ async fn a_flash_sale_wins_over_a_discount_on_the_same_item() {
         .expect("calculate_price should succeed");
 
     assert_eq!(res.items[0].final_unit_price, dec!(49.99));
-    // The id, not the title. The checkout saga allocates this sale's stock against it, and a
-    // title cannot be allocated against.
     assert_eq!(res.items[0].applied_flash_sale.as_deref(), Some(flash_id.to_string().as_str()));
-    // The 10% discount must not also apply — a flash sale suppresses it.
     assert!(res.items[0].applied_discount.is_none());
 }
 
@@ -271,7 +264,6 @@ async fn the_wallet_payment_discount_is_capped_at_25000() {
         .await
         .expect("calculate_price should succeed");
 
-    // 5% of 1,000,000 is 50,000, which the cap holds down to 25,000.
     assert_eq!(res.payment_discount, dec!(25000.00));
     assert_eq!(res.final_total, dec!(975000.00));
 }
@@ -295,8 +287,6 @@ async fn shipping_is_never_charged_below_zero() {
         .await
         .expect("calculate_price should succeed");
 
-    // The voucher is worth more than the shipping fee; the fee floors at zero rather than
-    // turning into a credit.
     assert_eq!(res.final_shipping_fee, dec!(0.00));
     assert_eq!(res.shipping_discount, dec!(20.00));
 }

@@ -1,5 +1,6 @@
 use rocket::serde::json::Json;
 use rocket::{catch, Request};
+use rocket::http::Status;
 
 use crate::error::ErrorResponse;
 
@@ -32,7 +33,7 @@ pub fn internal_error(request: &Request<'_>) -> Json<ErrorResponse> {
 }
 
 #[catch(default)]
-pub fn other(status: rocket::http::Status, request: &Request<'_>) -> Json<ErrorResponse> {
+pub fn other(status: Status, request: &Request<'_>) -> Json<ErrorResponse> {
     return Json(ErrorResponse::new(
         status.reason().unwrap_or("ERROR"),
         "this request was refused.",

@@ -4,6 +4,7 @@ extern crate rocket;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
+use std::error::Error;
 
 use diesel::{Connection, PgConnection};
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
@@ -24,16 +25,17 @@ use kinetix_pricing_service::routes::{
 use kinetix_pricing_service::security::jwt::JwtVerifier;
 use kinetix_pricing_service::security::{PeerGuard, ServiceIdentity};
 use tonic::transport::Server;
+use tonic_reflection::server::Builder;
 use tracing::{error, info, warn};
 
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
 
 const DRAIN_BUDGET: Duration = Duration::from_secs(25);
 
-type ServerError = Box<dyn std::error::Error + Send + Sync>;
+type ServerError = Box<dyn Error + Send + Sync>;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn Error>> {
     json_logging::init();
 
     if std::env::args().any(|arg| arg == "--migrate") {
@@ -42,7 +44,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut connection = PgConnection::establish(&database_url)?;
         let applied = connection
             .run_pending_migrations(MIGRATIONS)
-            .map_err(|e| -> Box<dyn std::error::Error> { format!("migration failed: {e}").into() })?;
+            .map_err(|e| -> Box<dyn Error> { format!("migration failed: {e}").into() })?;
 
         for migration in &applied {
             info!("applied migration {}", migration);
@@ -60,7 +62,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let metrics = Metrics::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
         .map(Arc::new)
-        .map_err(|e| -> Box<dyn std::error::Error> {
+        .map_err(|e| -> Box<dyn Error> {
             format!("the metric registry was refused: {e}").into()
         })?;
 
@@ -70,22 +72,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let grpc_addr: SocketAddr = format!("0.0.0.0:{}", app_cfg.grpc_port).parse()?;
     let grpc_service = PricingGrpcServer::new(grpc_pool);
 
-    let reflection = tonic_reflection::server::Builder::configure()
+    let reflection = Builder::configure()
         .register_encoded_file_descriptor_set(tonic::include_file_descriptor_set!(
             "pricing_descriptor"
         ))
         .build()?;
 
     let service_identity = ServiceIdentity::load()
-        .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+        .map_err(|e| -> Box<dyn Error> { e.into() })?;
     let server_tls = service_identity.server_tls();
 
-    let peer_guard = PeerGuard::from_env().map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+    let peer_guard = PeerGuard::from_env().map_err(|e| -> Box<dyn Error> { e.into() })?;
 
     let shutdown = ShutdownSignal::new();
     shutdown
         .listen_for_signals()
-        .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+        .map_err(|e| -> Box<dyn Error> { e.into() })?;
 
     let grpc_server = {
         let shutdown = shutdown.clone();
@@ -118,11 +120,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    let verifier = JwtVerifier::from_env().map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+    let verifier = JwtVerifier::from_env().map_err(|e| -> Box<dyn Error> { e.into() })?;
     let key_count = verifier
         .refresh()
         .await
-        .map_err(|e| -> Box<dyn std::error::Error> { format!("cannot load identity's JWKS: {e}").into() })?;
+        .map_err(|e| -> Box<dyn Error> { format!("cannot load identity's JWKS: {e}").into() })?;
     info!("loaded {} signing key(s) from identity's JWKS", key_count);
 
     let rest_server = {
@@ -202,8 +204,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Err(ref error) = rest_result {
                 error!(error = %error, "the REST server stopped with an error");
             }
-            grpc_result.map_err(|e| -> Box<dyn std::error::Error> { e.to_string().into() })?;
-            rest_result.map_err(|e| -> Box<dyn std::error::Error> { e.to_string().into() })?;
+            grpc_result.map_err(|e| -> Box<dyn Error> { e.to_string().into() })?;
+            rest_result.map_err(|e| -> Box<dyn Error> { e.to_string().into() })?;
             info!("both servers drained; exiting");
             return Ok(());
         }

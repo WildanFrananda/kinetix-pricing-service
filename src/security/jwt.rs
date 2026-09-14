@@ -3,6 +3,8 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
+use tokio::sync::Mutex;
+use reqwest::Client;
 
 use crate::security::jwks_breaker::JwksBreaker;
 
@@ -38,9 +40,9 @@ pub struct JwtVerifier {
     issuer: String,
     audience: String,
     keys: RwLock<HashMap<String, DecodingKey>>,
-    http: reqwest::Client,
+    http: Client,
     breaker: JwksBreaker,
-    refresh_lock: tokio::sync::Mutex<()>,
+    refresh_lock: Mutex<()>,
 }
 
 #[derive(Debug)]
@@ -59,7 +61,7 @@ impl JwtVerifier {
         let audience = std::env::var("JWT_AUDIENCE")
             .map_err(|_| "JWT_AUDIENCE is required and has no default".to_string())?;
 
-        let http = reqwest::Client::builder()
+        let http = Client::builder()
             .connect_timeout(Duration::from_secs(2))
             .timeout(Duration::from_secs(5))
             .build()
@@ -72,7 +74,7 @@ impl JwtVerifier {
             keys: RwLock::new(HashMap::new()),
             http,
             breaker: JwksBreaker::new(JWKS_COOLDOWN),
-            refresh_lock: tokio::sync::Mutex::new(()),
+            refresh_lock: Mutex::new(()),
         });
     }
 

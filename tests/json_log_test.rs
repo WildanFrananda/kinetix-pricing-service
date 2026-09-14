@@ -1,4 +1,4 @@
-use std::io;
+use std::io::{Write, Result};
 use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
@@ -21,8 +21,8 @@ impl<'writer> MakeWriter<'writer> for SharedBuffer {
     }
 }
 
-impl io::Write for SharedBufferWriter {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+impl Write for SharedBufferWriter {
+    fn write(&mut self, buf: &[u8]) -> Result<usize> {
         self.0
             .lock()
             .expect("the log buffer was poisoned")
@@ -30,7 +30,7 @@ impl io::Write for SharedBufferWriter {
         return Ok(buf.len());
     }
 
-    fn flush(&mut self) -> io::Result<()> {
+    fn flush(&mut self) -> Result<()> {
         return Ok(());
     }
 }

@@ -18,8 +18,7 @@ pub struct PricingService<D, V, F>
 where
     D: DiscountRepositoryPort,
     V: VoucherRepositoryPort,
-    F: FlashSaleRepositoryPort,
-{
+    F: FlashSaleRepositoryPort, {
     pub discount_repo: D,
     pub voucher_repo: V,
     pub flash_sale_repo: F,
@@ -43,8 +42,7 @@ impl<D, V, F> PricingService<D, V, F>
 where
     D: DiscountRepositoryPort,
     V: VoucherRepositoryPort,
-    F: FlashSaleRepositoryPort,
-{
+    F: FlashSaleRepositoryPort, {
     pub fn new(
         discount_repo: D,
         voucher_repo: V,

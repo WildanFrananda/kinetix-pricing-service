@@ -1,4 +1,4 @@
-use std::fmt;
+use std::fmt::{Display, Formatter, Result as FResult};
 use std::str::FromStr;
 use chrono::{DateTime, Utc};
 use diesel::pg::Pg;
@@ -17,8 +17,8 @@ pub enum DiscountType {
     Fixed,
 }
 
-impl fmt::Display for DiscountType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Display for DiscountType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FResult {
         write!(f, "{}", self.as_str())
     }
 }

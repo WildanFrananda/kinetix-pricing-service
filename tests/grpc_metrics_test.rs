@@ -1,9 +1,11 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::transport::Server;
+use tonic::Code;
 
 use kinetix_pricing_service::db::create_pool;
 use kinetix_pricing_service::grpc::{PricingGrpcServer, PricingServiceServer};
@@ -131,7 +133,7 @@ async fn a_call_the_peer_guard_turns_away_is_counted_too() {
         .redeem_voucher(blank_redemption())
         .await
         .expect_err("an uncertified caller was let through");
-    assert_eq!(status.code(), tonic::Code::Unauthenticated);
+    assert_eq!(status.code(), Code::Unauthenticated);
 
     let body = metrics.encode().expect("the registry would not encode");
     assert_eq!(series(&body, REDEEM, "UNAUTHENTICATED"), 1);
@@ -173,7 +175,7 @@ async fn the_shutdown_signal_drains_the_grpc_server_and_lets_it_return() {
     drop(client);
     shutdown.trigger("SIGTERM");
 
-    tokio::time::timeout(std::time::Duration::from_secs(10), server)
+    tokio::time::timeout(Duration::from_secs(10), server)
         .await
         .expect("the gRPC server did not return after the signal fired")
         .expect("the test server task panicked");

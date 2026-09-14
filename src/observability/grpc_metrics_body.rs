@@ -39,8 +39,7 @@ impl<B> GrpcMetricsBody<B> {
 
 impl<B> Body for GrpcMetricsBody<B>
 where
-    B: Body + Unpin,
-{
+    B: Body + Unpin, {
     type Data = B::Data;
     type Error = B::Error;
 
