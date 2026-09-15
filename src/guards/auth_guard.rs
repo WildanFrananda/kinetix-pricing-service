@@ -13,7 +13,11 @@ pub struct AuthenticatedCaller {
 
 impl From<AccessClaims> for AuthenticatedCaller {
     fn from(c: AccessClaims) -> Self {
-        return Self { principal_id: c.sub, email: c.email, role: c.role };
+        return Self {
+            principal_id: c.sub,
+            email: c.email,
+            role: c.role,
+        };
     }
 }
 

@@ -1,0 +1,34 @@
+name: CI
+
+# pricing had no CI at all until now. (kinetix-infrastructure/docs/STAGING-DEPLOYMENT-PLAN.md §5, item 6)
+#
+# No database service: the suite drives the domain through fakes (tests/pricing_api_test.rs), and
+# DATABASE_URL is read only by the binary at startup, never by a test. Add a Postgres service here the
+# day a test needs a real connection — and not before, because a service nothing uses still has to be
+# waited for on every run.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # The toolchain the Dockerfile builds with, so a green run means the shipped image compiles.
+      - uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo fmt --all --check
+
+      # Warnings fail. Clippy catches the shapes this codebase has already been bitten by: a `?` that
+      # swallows a failure into a default, and a match arm that returns the wrong branch silently.
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - run: cargo test --all-targets --all-features

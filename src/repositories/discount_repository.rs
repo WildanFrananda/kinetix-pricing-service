@@ -29,7 +29,11 @@ impl DiscountRepositoryPort for DiscountRepository {
         return Ok(records);
     }
 
-    async fn create(&self, pool: &DbPool, req: CreateDiscountRequest) -> Result<Discount, AppError> {
+    async fn create(
+        &self,
+        pool: &DbPool,
+        req: CreateDiscountRequest,
+    ) -> Result<Discount, AppError> {
         let mut conn = pool.get().await?;
         let new_id = Uuid::new_v4();
         let now = Utc::now();

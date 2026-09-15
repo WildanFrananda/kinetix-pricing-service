@@ -17,10 +17,14 @@ pub async fn create_discount(
 
     let payload = req.into_inner();
     if payload.value <= rust_decimal_macros::dec!(0.0) {
-        return Err(AppError::BadRequest("Discount value must be greater than zero".to_string()));
+        return Err(AppError::BadRequest(
+            "Discount value must be greater than zero".to_string(),
+        ));
     }
     if payload.start_time >= payload.end_time {
-        return Err(AppError::BadRequest("Discount start_time must be before end_time".to_string()));
+        return Err(AppError::BadRequest(
+            "Discount start_time must be before end_time".to_string(),
+        ));
     }
 
     let repo = DiscountRepository;

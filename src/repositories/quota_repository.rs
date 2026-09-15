@@ -1,4 +1,4 @@
-use chrono::{Utc, DateTime};
+use chrono::{DateTime, Utc};
 use diesel::prelude::*;
 use diesel_async::scoped_futures::ScopedFutureExt;
 use diesel_async::{AsyncConnection, RunQueryDsl};
@@ -264,13 +264,15 @@ impl QuotaRepository {
 
                 match existing {
                     Some(row) => {
-                        diesel::update(ledger::flash_sale_allocations.filter(ledger::id.eq(row.id)))
-                            .set((
-                                ledger::released_at.eq(None::<DateTime<Utc>>),
-                                ledger::quantity.eq(quantity_wanted),
-                            ))
-                            .execute(conn)
-                            .await?;
+                        diesel::update(
+                            ledger::flash_sale_allocations.filter(ledger::id.eq(row.id)),
+                        )
+                        .set((
+                            ledger::released_at.eq(None::<DateTime<Utc>>),
+                            ledger::quantity.eq(quantity_wanted),
+                        ))
+                        .execute(conn)
+                        .await?;
                     }
                     None => {
                         diesel::insert_into(ledger::flash_sale_allocations)

@@ -1,10 +1,10 @@
 use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
+use reqwest::Client;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
-use reqwest::Client;
 
 use crate::security::jwks_breaker::JwksBreaker;
 

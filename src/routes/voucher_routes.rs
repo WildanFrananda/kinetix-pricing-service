@@ -18,10 +18,14 @@ pub async fn create_voucher(
 
     let payload = req.into_inner();
     if payload.code.trim().is_empty() {
-        return Err(AppError::BadRequest("Voucher code cannot be blank".to_string()));
+        return Err(AppError::BadRequest(
+            "Voucher code cannot be blank".to_string(),
+        ));
     }
     if payload.value <= rust_decimal_macros::dec!(0.0) {
-        return Err(AppError::BadRequest("Voucher value must be greater than zero".to_string()));
+        return Err(AppError::BadRequest(
+            "Voucher value must be greater than zero".to_string(),
+        ));
     }
 
     let repo = VoucherRepository;
@@ -38,7 +42,9 @@ pub async fn apply_voucher(
     let query_req = ApplyVoucherRequest::new(payload.code, payload.cart_subtotal);
 
     if query_req.code.trim().is_empty() {
-        return Err(AppError::BadRequest("Voucher code cannot be blank".to_string()));
+        return Err(AppError::BadRequest(
+            "Voucher code cannot be blank".to_string(),
+        ));
     }
 
     let repo = VoucherRepository;
@@ -55,12 +61,10 @@ pub async fn apply_voucher(
 }
 
 #[get("/api/v1/vouchers/<code>")]
-pub async fn get_voucher(
-    pool: &State<DbPool>,
-    code: &str,
-) -> Result<Json<Voucher>, AppError> {
+pub async fn get_voucher(pool: &State<DbPool>, code: &str) -> Result<Json<Voucher>, AppError> {
     let repo = VoucherRepository;
-    let voucher = repo.find_by_code(pool.inner(), code)
+    let voucher = repo
+        .find_by_code(pool.inner(), code)
         .await?
         .ok_or_else(|| {
             return AppError::NotFound(format!("Voucher '{}' not found", code));

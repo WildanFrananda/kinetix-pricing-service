@@ -36,7 +36,12 @@ fn discount(value: Decimal, kind: &str, product: Option<&str>, category: Option<
     };
 }
 
-fn voucher(value: Decimal, kind: &str, min_spend: Decimal, max_discount: Option<Decimal>) -> Voucher {
+fn voucher(
+    value: Decimal,
+    kind: &str,
+    min_spend: Decimal,
+    max_discount: Option<Decimal>,
+) -> Voucher {
     let now = Utc::now();
     return Voucher {
         id: Uuid::new_v4(),
@@ -55,7 +60,12 @@ fn voucher(value: Decimal, kind: &str, min_spend: Decimal, max_discount: Option<
     };
 }
 
-fn item(product_id: &str, category_id: Option<&str>, base_price: Decimal, quantity: i32) -> PriceItemRequest {
+fn item(
+    product_id: &str,
+    category_id: Option<&str>,
+    base_price: Decimal,
+    quantity: i32,
+) -> PriceItemRequest {
     return PriceItemRequest {
         product_id: product_id.to_string(),
         category_id: category_id.map(str::to_string),
@@ -139,7 +149,10 @@ fn percentage_voucher_discount_is_capped_by_max_discount() {
     let evaluator = DefaultVoucherEvaluator;
     let v = voucher(dec!(50.00), "PERCENTAGE", dec!(0.00), Some(dec!(25000.00)));
 
-    assert_eq!(evaluator.calculate_discount(&v, dec!(100000.00)), dec!(25000.00));
+    assert_eq!(
+        evaluator.calculate_discount(&v, dec!(100000.00)),
+        dec!(25000.00)
+    );
 }
 
 #[test]
@@ -167,7 +180,11 @@ impl DiscountRepositoryPort for FakeDiscounts {
     async fn find_all_active(&self, _pool: &DbPool) -> Result<Vec<Discount>, AppError> {
         return Ok(self.0.clone());
     }
-    async fn create(&self, _pool: &DbPool, _req: CreateDiscountRequest) -> Result<Discount, AppError> {
+    async fn create(
+        &self,
+        _pool: &DbPool,
+        _req: CreateDiscountRequest,
+    ) -> Result<Discount, AppError> {
         unimplemented!("not used by these tests");
     }
 }
@@ -177,17 +194,29 @@ impl VoucherRepositoryPort for FakeVouchers {
     async fn find_by_code(&self, _pool: &DbPool, _code: &str) -> Result<Option<Voucher>, AppError> {
         return Ok(self.0.clone());
     }
-    async fn create(&self, _pool: &DbPool, _req: CreateVoucherRequest) -> Result<Voucher, AppError> {
+    async fn create(
+        &self,
+        _pool: &DbPool,
+        _req: CreateVoucherRequest,
+    ) -> Result<Voucher, AppError> {
         unimplemented!("not used by these tests");
     }
 }
 
 #[async_trait]
 impl FlashSaleRepositoryPort for FakeFlashSales {
-    async fn find_active_for_product(&self, _pool: &DbPool, _product_id: &str) -> Result<Option<FlashSale>, AppError> {
+    async fn find_active_for_product(
+        &self,
+        _pool: &DbPool,
+        _product_id: &str,
+    ) -> Result<Option<FlashSale>, AppError> {
         return Ok(self.0.clone());
     }
-    async fn create(&self, _pool: &DbPool, _req: CreateFlashSaleRequest) -> Result<FlashSale, AppError> {
+    async fn create(
+        &self,
+        _pool: &DbPool,
+        _req: CreateFlashSaleRequest,
+    ) -> Result<FlashSale, AppError> {
         unimplemented!("not used by these tests");
     }
 }
@@ -227,7 +256,11 @@ async fn a_flash_sale_wins_over_a_discount_on_the_same_item() {
         created_at: now,
         updated_at: now,
     };
-    let svc = service(vec![discount(dec!(10.00), "PERCENTAGE", None, None)], None, Some(flash));
+    let svc = service(
+        vec![discount(dec!(10.00), "PERCENTAGE", None, None)],
+        None,
+        Some(flash),
+    );
 
     let res = svc
         .calculate_price(
@@ -243,7 +276,10 @@ async fn a_flash_sale_wins_over_a_discount_on_the_same_item() {
         .expect("calculate_price should succeed");
 
     assert_eq!(res.items[0].final_unit_price, dec!(49.99));
-    assert_eq!(res.items[0].applied_flash_sale.as_deref(), Some(flash_id.to_string().as_str()));
+    assert_eq!(
+        res.items[0].applied_flash_sale.as_deref(),
+        Some(flash_id.to_string().as_str())
+    );
     assert!(res.items[0].applied_discount.is_none());
 }
 

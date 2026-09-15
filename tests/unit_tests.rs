@@ -1,9 +1,9 @@
 #[cfg(test)]
 mod tests {
-    use rust_decimal_macros::dec;
+    use kinetix_pricing_service::error::AppError;
     use kinetix_pricing_service::models::discount::DiscountType;
     use kinetix_pricing_service::models::voucher::ApplyVoucherRequest;
-    use kinetix_pricing_service::error::AppError;
+    use rust_decimal_macros::dec;
 
     #[test]
     fn test_discount_type_conversions() {

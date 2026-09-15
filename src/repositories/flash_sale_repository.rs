@@ -14,7 +14,11 @@ pub struct FlashSaleRepository;
 
 #[async_trait]
 impl FlashSaleRepositoryPort for FlashSaleRepository {
-    async fn find_active_for_product(&self, pool: &DbPool, target_product_id: &str) -> Result<Option<FlashSale>, AppError> {
+    async fn find_active_for_product(
+        &self,
+        pool: &DbPool,
+        target_product_id: &str,
+    ) -> Result<Option<FlashSale>, AppError> {
         let mut conn = pool.get().await?;
         let now = Utc::now();
 
@@ -31,7 +35,11 @@ impl FlashSaleRepositoryPort for FlashSaleRepository {
         return Ok(record);
     }
 
-    async fn create(&self, pool: &DbPool, req: CreateFlashSaleRequest) -> Result<FlashSale, AppError> {
+    async fn create(
+        &self,
+        pool: &DbPool,
+        req: CreateFlashSaleRequest,
+    ) -> Result<FlashSale, AppError> {
         let mut conn = pool.get().await?;
         let new_id = Uuid::new_v4();
         let now = Utc::now();

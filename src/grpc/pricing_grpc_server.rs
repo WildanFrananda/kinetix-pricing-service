@@ -188,9 +188,7 @@ impl PricingGrpcTrait for PricingGrpcServer {
         let outcome =
             QuotaRepository::release_voucher(&self.pool, &req.voucher_code, &req.order_number)
                 .await
-                .map_err(|e| {
-                    Status::internal(format!("could not release the redemption: {e}"))
-                })?;
+                .map_err(|e| Status::internal(format!("could not release the redemption: {e}")))?;
 
         return Ok(Response::new(match outcome {
             QuotaOutcome::Applied { remaining } => ReleaseVoucherRedemptionResponse {
@@ -205,14 +203,12 @@ impl PricingGrpcTrait for PricingGrpcServer {
                 remaining_quota: remaining,
                 error: None,
             },
-            QuotaOutcome::Exhausted | QuotaOutcome::NotFound => {
-                ReleaseVoucherRedemptionResponse {
-                    success: false,
-                    already_released: false,
-                    remaining_quota: 0,
-                    error: Some(error_detail("VOUCHER_NOT_FOUND", "no such voucher")),
-                }
-            }
+            QuotaOutcome::Exhausted | QuotaOutcome::NotFound => ReleaseVoucherRedemptionResponse {
+                success: false,
+                already_released: false,
+                remaining_quota: 0,
+                error: Some(error_detail("VOUCHER_NOT_FOUND", "no such voucher")),
+            },
         }));
     }
 
@@ -287,12 +283,9 @@ impl PricingGrpcTrait for PricingGrpcServer {
             }));
         };
 
-        let outcome =
-            QuotaRepository::release_flash_sale(&self.pool, sale_id, &req.order_number)
-                .await
-                .map_err(|e| {
-                    Status::internal(format!("could not release the allocation: {e}"))
-                })?;
+        let outcome = QuotaRepository::release_flash_sale(&self.pool, sale_id, &req.order_number)
+            .await
+            .map_err(|e| Status::internal(format!("could not release the allocation: {e}")))?;
 
         return Ok(Response::new(match outcome {
             QuotaOutcome::Applied { remaining } => ReleaseFlashSaleAllocationResponse {

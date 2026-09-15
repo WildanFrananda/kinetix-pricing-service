@@ -1,7 +1,7 @@
 pub mod jwks_breaker;
 pub mod jwt;
-pub mod peer_guard;
 pub mod mtls;
+pub mod peer_guard;
 pub mod spiffe;
 
 pub use mtls::ServiceIdentity;

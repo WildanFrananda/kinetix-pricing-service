@@ -1,11 +1,11 @@
+use diesel::result::Error;
+use diesel_async::pooled_connection::deadpool::PoolError;
 use rocket::http::Status;
 use rocket::response::{self, Responder, Response, Result};
 use rocket::serde::json::Json;
 use rocket::Request;
 use serde::Serialize;
 use thiserror::Error;
-use diesel::result::Error;
-use diesel_async::pooled_connection::deadpool::PoolError;
 
 use crate::observability::request_id::REQUEST_ID_KEY;
 

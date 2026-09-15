@@ -1,9 +1,9 @@
-use std::str::FromStr;
 use chrono::{DateTime, Utc};
 use diesel::pg::Pg;
 use diesel::prelude::*;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 use uuid::Uuid;
 
 use crate::models::discount::DiscountType;
@@ -54,6 +54,9 @@ pub struct ApplyVoucherRequest {
 
 impl ApplyVoucherRequest {
     pub fn new(code: String, cart_subtotal: Decimal) -> Self {
-        return Self { code, cart_subtotal };
+        return Self {
+            code,
+            cart_subtotal,
+        };
     }
 }

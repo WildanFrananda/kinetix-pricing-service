@@ -1,9 +1,9 @@
+use diesel::result::Error;
 use rocket::http::{Header, Status};
 use rocket::local::blocking::{Client, LocalResponse};
 use rocket::serde::json::Json;
 use rocket::{catchers, get, routes};
 use serde_json::Value;
-use diesel::result::Error;
 
 use kinetix_pricing_service::error::{AppError, ErrorResponse};
 use kinetix_pricing_service::routes::catchers::{internal_error, not_found, other, unprocessable};

@@ -17,10 +17,14 @@ pub async fn create_flash_sale(
 
     let payload = req.into_inner();
     if payload.flash_price <= rust_decimal_macros::dec!(0.0) {
-        return Err(AppError::BadRequest("Flash sale price must be greater than zero".to_string()));
+        return Err(AppError::BadRequest(
+            "Flash sale price must be greater than zero".to_string(),
+        ));
     }
     if payload.stock_limit <= 0 {
-        return Err(AppError::BadRequest("Flash sale stock limit must be positive".to_string()));
+        return Err(AppError::BadRequest(
+            "Flash sale stock limit must be positive".to_string(),
+        ));
     }
 
     let repo = FlashSaleRepository;
@@ -34,6 +38,8 @@ pub async fn get_flash_sale_for_product(
     product_id: &str,
 ) -> Result<Json<Option<FlashSale>>, AppError> {
     let repo = FlashSaleRepository;
-    let flash_sale = repo.find_active_for_product(pool.inner(), product_id).await?;
+    let flash_sale = repo
+        .find_active_for_product(pool.inner(), product_id)
+        .await?;
     return Ok(Json(flash_sale));
 }

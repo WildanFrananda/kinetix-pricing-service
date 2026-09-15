@@ -1,6 +1,6 @@
+use rocket::http::Status;
 use rocket::serde::json::Json;
 use rocket::{catch, Request};
-use rocket::http::Status;
 
 use crate::error::ErrorResponse;
 

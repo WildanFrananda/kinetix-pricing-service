@@ -1,10 +1,10 @@
-use std::fmt::{Display, Formatter, Result as FResult};
-use std::str::FromStr;
 use chrono::{DateTime, Utc};
 use diesel::pg::Pg;
 use diesel::prelude::*;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use std::fmt::{Display, Formatter, Result as FResult};
+use std::str::FromStr;
 use uuid::Uuid;
 
 use crate::error::AppError;
@@ -39,7 +39,12 @@ impl FromStr for DiscountType {
         match s.trim().to_uppercase().as_str() {
             "PERCENTAGE" => return Ok(DiscountType::Percentage),
             "FIXED" => return Ok(DiscountType::Fixed),
-            other => return Err(AppError::BadRequest(format!("Invalid discount_type: '{}'. Expected 'PERCENTAGE' or 'FIXED'", other))),
+            other => {
+                return Err(AppError::BadRequest(format!(
+                    "Invalid discount_type: '{}'. Expected 'PERCENTAGE' or 'FIXED'",
+                    other
+                )))
+            }
         }
     }
 }

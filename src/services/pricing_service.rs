@@ -2,9 +2,7 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
 use crate::error::AppError;
-use crate::models::{
-    CalculatePriceRequest, CalculatePriceResponse, PriceItemResponse,
-};
+use crate::models::{CalculatePriceRequest, CalculatePriceResponse, PriceItemResponse};
 use crate::repositories::{
     DiscountRepository, DiscountRepositoryPort, FlashSaleRepository, FlashSaleRepositoryPort,
     VoucherRepository, VoucherRepositoryPort,
@@ -18,7 +16,8 @@ pub struct PricingService<D, V, F>
 where
     D: DiscountRepositoryPort,
     V: VoucherRepositoryPort,
-    F: FlashSaleRepositoryPort, {
+    F: FlashSaleRepositoryPort,
+{
     pub discount_repo: D,
     pub voucher_repo: V,
     pub flash_sale_repo: F,
@@ -42,7 +41,8 @@ impl<D, V, F> PricingService<D, V, F>
 where
     D: DiscountRepositoryPort,
     V: VoucherRepositoryPort,
-    F: FlashSaleRepositoryPort, {
+    F: FlashSaleRepositoryPort,
+{
     pub fn new(
         discount_repo: D,
         voucher_repo: V,
@@ -75,7 +75,11 @@ where
             let mut applied_flash_sale = None;
             let mut applied_discount = None;
 
-            if let Ok(Some(flash)) = self.flash_sale_repo.find_active_for_product(pool, &item.product_id).await {
+            if let Ok(Some(flash)) = self
+                .flash_sale_repo
+                .find_active_for_product(pool, &item.product_id)
+                .await
+            {
                 if flash.flash_price < final_unit_price {
                     final_unit_price = flash.flash_price;
                     applied_flash_sale = Some(flash.id.to_string());
@@ -88,7 +92,9 @@ where
 
                 for discount in &active_discounts {
                     if self.discount_evaluator.matches_item(discount, item) {
-                        let savings = self.discount_evaluator.calculate_savings(discount, base_price);
+                        let savings = self
+                            .discount_evaluator
+                            .calculate_savings(discount, base_price);
                         if savings > best_discount_savings {
                             best_discount_savings = savings;
                             selected_discount_title = Some(discount.title.clone());
@@ -129,9 +135,14 @@ where
             if let Ok(Some(voucher)) = self.voucher_repo.find_by_code(pool, code).await {
                 if self.voucher_evaluator.is_eligible(&voucher, subtotal) {
                     if voucher.discount_type == "SHIPPING" || voucher.code.contains("FREE_SHIP") {
-                        shipping_discount = base_shipping.min(self.voucher_evaluator.calculate_discount(&voucher, base_shipping));
+                        shipping_discount = base_shipping.min(
+                            self.voucher_evaluator
+                                .calculate_discount(&voucher, base_shipping),
+                        );
                     } else {
-                        voucher_discount = self.voucher_evaluator.calculate_discount(&voucher, subtotal);
+                        voucher_discount = self
+                            .voucher_evaluator
+                            .calculate_discount(&voucher, subtotal);
                     }
                     applied_voucher = Some(voucher.code.clone());
                 }
@@ -146,11 +157,15 @@ where
         }
 
         let final_shipping_fee = (base_shipping - shipping_discount).max(dec!(0.00));
-        let final_total = (subtotal - voucher_discount - payment_discount + final_shipping_fee).max(dec!(0.00));
+        let final_total =
+            (subtotal - voucher_discount - payment_discount + final_shipping_fee).max(dec!(0.00));
 
         return Ok(CalculatePriceResponse {
             subtotal,
-            total_discount: total_item_savings + voucher_discount + shipping_discount + payment_discount,
+            total_discount: total_item_savings
+                + voucher_discount
+                + shipping_discount
+                + payment_discount,
             voucher_discount,
             final_total,
             applied_voucher,

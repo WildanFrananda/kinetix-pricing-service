@@ -1,7 +1,7 @@
 use tonic::{Request, Status};
 
-use crate::observability::request_id;
 use super::spiffe::peer_service;
+use crate::observability::request_id;
 
 #[derive(Clone)]
 pub struct PeerGuard {
@@ -41,7 +41,9 @@ impl PeerGuard {
                 request_id = request_id(&request).as_deref().unwrap_or("-"),
                 "refused a gRPC call from a service that is not on the allow list"
             );
-            return Err(Status::permission_denied("this service is not permitted to call pricing"));
+            return Err(Status::permission_denied(
+                "this service is not permitted to call pricing",
+            ));
         }
 
         tracing::info!(

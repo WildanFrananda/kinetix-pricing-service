@@ -1,10 +1,10 @@
 #[macro_use]
 extern crate rocket;
 
+use std::error::Error;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
-use std::error::Error;
 
 use diesel::{Connection, PgConnection};
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
@@ -78,8 +78,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         ))
         .build()?;
 
-    let service_identity = ServiceIdentity::load()
-        .map_err(|e| -> Box<dyn Error> { e.into() })?;
+    let service_identity = ServiceIdentity::load().map_err(|e| -> Box<dyn Error> { e.into() })?;
     let server_tls = service_identity.server_tls();
 
     let peer_guard = PeerGuard::from_env().map_err(|e| -> Box<dyn Error> { e.into() })?;

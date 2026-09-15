@@ -27,7 +27,8 @@ impl<S, ReqBody, ResBody> Service<Request<ReqBody>> for GrpcMetricsService<S>
 where
     S: Service<Request<ReqBody>, Response = Response<ResBody>>,
     S::Future: Send + 'static,
-    ResBody: 'static, {
+    ResBody: 'static,
+{
     type Response = Response<GrpcMetricsBody<ResBody>>;
     type Error = S::Error;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;

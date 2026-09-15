@@ -25,6 +25,10 @@ impl AppConfig {
             .parse::<u16>()
             .expect("GRPC_PORT must be a port number. Fail-fast shutdown.");
 
-        return AppConfig { database_url, port, grpc_port };
+        return AppConfig {
+            database_url,
+            port,
+            grpc_port,
+        };
     }
 }

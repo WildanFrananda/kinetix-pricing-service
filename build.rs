@@ -17,9 +17,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     tonic_build::configure()
         .file_descriptor_set_path(out_dir.join("pricing_descriptor.bin"))
         .compile(
-            &[
-                contracts.join("pricing/v1/pricing.proto").to_str().unwrap(),
-            ],
+            &[contracts.join("pricing/v1/pricing.proto").to_str().unwrap()],
             &[contracts.to_str().unwrap()],
         )?;
 

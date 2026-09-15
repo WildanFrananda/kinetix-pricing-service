@@ -1,6 +1,5 @@
 #![recursion_limit = "256"]
 
-pub mod security;
 pub mod config;
 pub mod db;
 pub mod error;
@@ -13,6 +12,7 @@ pub mod proto;
 pub mod repositories;
 pub mod routes;
 pub mod schema;
+pub mod security;
 pub mod services;
 pub mod traits;
 

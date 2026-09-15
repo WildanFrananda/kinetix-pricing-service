@@ -7,7 +7,8 @@ use tracing_subscriber::EnvFilter;
 
 pub fn subscriber<W>(writer: W) -> impl Subscriber + Send + Sync + 'static
 where
-    W: for<'writer> MakeWriter<'writer> + Send + Sync + 'static, {
+    W: for<'writer> MakeWriter<'writer> + Send + Sync + 'static,
+{
     return tracing_subscriber::fmt()
         .json()
         .flatten_event(true)

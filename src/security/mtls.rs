@@ -37,11 +37,18 @@ impl ServiceIdentity {
             ("ca.pem", &ca_pem, "BEGIN CERTIFICATE"),
         ] {
             if !String::from_utf8_lossy(bytes).contains(marker) {
-                return Err(format!("{}/{name} is not a PEM containing {marker}", dir.display()));
+                return Err(format!(
+                    "{}/{name} is not a PEM containing {marker}",
+                    dir.display()
+                ));
             }
         }
 
-        return Ok(Self { cert_pem, key_pem, ca_pem });
+        return Ok(Self {
+            cert_pem,
+            key_pem,
+            ca_pem,
+        });
     }
 
     pub fn server_tls(&self) -> ServerTlsConfig {

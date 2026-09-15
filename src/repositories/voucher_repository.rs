@@ -14,7 +14,11 @@ pub struct VoucherRepository;
 
 #[async_trait]
 impl VoucherRepositoryPort for VoucherRepository {
-    async fn find_by_code(&self, pool: &DbPool, search_code: &str) -> Result<Option<Voucher>, AppError> {
+    async fn find_by_code(
+        &self,
+        pool: &DbPool,
+        search_code: &str,
+    ) -> Result<Option<Voucher>, AppError> {
         let mut conn = pool.get().await?;
         let now = Utc::now();
 
