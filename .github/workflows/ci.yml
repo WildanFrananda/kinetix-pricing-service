@@ -25,6 +25,12 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # build.rs generates the tonic client from .contracts/proto and refuses to run without it — there is no
+      # kinetix-contracts crate, so the .proto are fetched at a pinned commit instead. The Dockerfile does
+      # this too; a laptop passes without it only because .contracts/ is already there.
+      - name: Fetch the contracts
+        run: sh bin/sync-contracts
+
       - run: cargo fmt --all --check
 
       # Warnings fail. Clippy catches the shapes this codebase has already been bitten by: a `?` that
