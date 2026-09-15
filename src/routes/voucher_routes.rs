@@ -67,7 +67,7 @@ pub async fn get_voucher(pool: &State<DbPool>, code: &str) -> Result<Json<Vouche
         .find_by_code(pool.inner(), code)
         .await?
         .ok_or_else(|| {
-            return AppError::NotFound(format!("Voucher '{}' not found", code));
+            return AppError::NotFound(format!("Voucher '{code}' not found"));
         })?;
     return Ok(Json(voucher));
 }

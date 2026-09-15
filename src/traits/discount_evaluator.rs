@@ -12,12 +12,12 @@ pub struct DefaultDiscountEvaluator;
 
 impl DiscountEvaluator for DefaultDiscountEvaluator {
     fn matches_item(&self, discount: &Discount, item: &PriceItemRequest) -> bool {
-        let matches_product = discount.target_product_id.as_ref().map_or(false, |p| {
+        let matches_product = discount.target_product_id.as_ref().is_some_and(|p| {
             return p == &item.product_id;
         });
 
-        let matches_category = discount.target_category_id.as_ref().map_or(false, |c| {
-            return item.category_id.as_ref().map_or(false, |item_c| {
+        let matches_category = discount.target_category_id.as_ref().is_some_and(|c| {
+            return item.category_id.as_ref().is_some_and(|item_c| {
                 return item_c == c;
             });
         });

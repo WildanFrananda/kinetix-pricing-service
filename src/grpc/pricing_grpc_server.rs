@@ -78,7 +78,7 @@ impl PricingGrpcTrait for PricingGrpcServer {
             .calculate_price(&self.pool, domain_req)
             .await
             .map_err(|e| {
-                return Status::internal(format!("Pricing service calculation error: {}", e));
+                return Status::internal(format!("Pricing service calculation error: {e}"));
             })?;
 
         let pb_items = result

@@ -41,8 +41,7 @@ impl FromStr for DiscountType {
             "FIXED" => return Ok(DiscountType::Fixed),
             other => {
                 return Err(AppError::BadRequest(format!(
-                    "Invalid discount_type: '{}'. Expected 'PERCENTAGE' or 'FIXED'",
-                    other
+                    "Invalid discount_type: '{other}'. Expected 'PERCENTAGE' or 'FIXED'"
                 )))
             }
         }

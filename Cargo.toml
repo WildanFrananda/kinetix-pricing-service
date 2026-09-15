@@ -4,6 +4,17 @@ version = "0.1.0"
 edition = "2021"
 description = "Kinetix Pricing Service — Discounts, Vouchers, Flash Sales, and Product Pricing Engine in Rust (Rocket & Tonic gRPC with Diesel Async)."
 
+# This codebase returns explicitly, match arms included: a bare tail expression reads as a value and hides
+# that the function ends there. Clippy's `needless_return` is the one lint that disagrees with that rule, so
+# it is turned off here rather than being silenced case by case — and everything else stays deny-on-warning
+# in CI.
+[lints.clippy]
+needless_return = "allow"
+# AppError is 176 bytes, so clippy calls every `Result<_, AppError>` a large-Err function. Boxing it would
+# change the signature of nearly every route, repository and guard for a copy nobody has measured as a
+# problem. Left as it is, deliberately, rather than reshaped to satisfy a lint.
+result_large_err = "allow"
+
 [lib]
 name = "kinetix_pricing_service"
 path = "src/lib.rs"
