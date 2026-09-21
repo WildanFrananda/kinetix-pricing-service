@@ -8,10 +8,11 @@ use kinetix_pricing_service::db::create_pool;
 use kinetix_pricing_service::error::AppError;
 use kinetix_pricing_service::models::{
     CalculatePriceRequest, CreateDiscountRequest, CreateFlashSaleRequest, CreateVoucherRequest,
-    Discount, FlashSale, PriceItemRequest, Voucher,
+    Discount, FlashSale, PriceItemRequest, ShippingQuoteRequest, ShippingRate, Voucher,
 };
 use kinetix_pricing_service::repositories::{
-    DiscountRepositoryPort, FlashSaleRepositoryPort, VoucherRepositoryPort,
+    DiscountRepositoryPort, FlashSaleRepositoryPort, ShippingRateRepositoryPort,
+    VoucherRepositoryPort,
 };
 use kinetix_pricing_service::services::PricingService;
 use kinetix_pricing_service::traits::{
@@ -225,15 +226,60 @@ fn unconnected_pool() -> DbPool {
     return create_pool("postgres://unused:unused@127.0.0.1:1/unused");
 }
 
+struct FakeShippingRates(Option<ShippingRate>);
+
+#[async_trait]
+impl ShippingRateRepositoryPort for FakeShippingRates {
+    async fn find_by_tier(
+        &self,
+        _pool: &DbPool,
+        _tier: &str,
+    ) -> Result<Option<ShippingRate>, AppError> {
+        return Ok(self.0.clone());
+    }
+}
+
+fn rate(
+    tier: &str,
+    base: rust_decimal::Decimal,
+    per_km: rust_decimal::Decimal,
+    per_kg: rust_decimal::Decimal,
+    per_kg_per_100km: rust_decimal::Decimal,
+) -> ShippingRate {
+    let now = Utc::now();
+
+    return ShippingRate {
+        service_tier: tier.to_string(),
+        base_fee: base,
+        per_km_fee: per_km,
+        per_kg_fee: per_kg,
+        per_kg_per_100km_fee: per_kg_per_100km,
+        currency: "IDR".to_string(),
+        active: true,
+        created_at: now,
+        updated_at: now,
+    };
+}
+
 fn service(
     discounts: Vec<Discount>,
     v: Option<Voucher>,
     flash: Option<FlashSale>,
-) -> PricingService<FakeDiscounts, FakeVouchers, FakeFlashSales> {
+) -> PricingService<FakeDiscounts, FakeVouchers, FakeFlashSales, FakeShippingRates> {
+    return service_with_rate(discounts, v, flash, None);
+}
+
+fn service_with_rate(
+    discounts: Vec<Discount>,
+    v: Option<Voucher>,
+    flash: Option<FlashSale>,
+    shipping: Option<ShippingRate>,
+) -> PricingService<FakeDiscounts, FakeVouchers, FakeFlashSales, FakeShippingRates> {
     return PricingService::new(
         FakeDiscounts(discounts),
         FakeVouchers(v),
         FakeFlashSales(flash),
+        FakeShippingRates(shipping),
         Box::new(DefaultDiscountEvaluator),
         Box::new(DefaultVoucherEvaluator),
     );
@@ -270,6 +316,7 @@ async fn a_flash_sale_wins_over_a_discount_on_the_same_item() {
                 voucher_code: None,
                 base_shipping_fee: None,
                 payment_method: None,
+                shipping: None,
             },
         )
         .await
@@ -295,6 +342,7 @@ async fn the_wallet_payment_discount_is_capped_at_25000() {
                 voucher_code: None,
                 base_shipping_fee: None,
                 payment_method: Some("INTERNAL_WALLET".to_string()),
+                shipping: None,
             },
         )
         .await
@@ -318,6 +366,7 @@ async fn shipping_is_never_charged_below_zero() {
                 voucher_code: Some("FREE_SHIP".to_string()),
                 base_shipping_fee: Some(dec!(20.00)),
                 payment_method: None,
+                shipping: None,
             },
         )
         .await
@@ -325,4 +374,197 @@ async fn shipping_is_never_charged_below_zero() {
 
     assert_eq!(res.final_shipping_fee, dec!(0.00));
     assert_eq!(res.shipping_discount, dec!(20.00));
+}
+
+fn quote(tier: &str, distance_km: rust_decimal::Decimal, grams: i64) -> ShippingQuoteRequest {
+    return ShippingQuoteRequest {
+        service_tier: tier.to_string(),
+        distance_km,
+        total_weight_grams: grams,
+    };
+}
+
+async fn fee_for(rate_row: ShippingRate, quoted: ShippingQuoteRequest) -> rust_decimal::Decimal {
+    let svc = service_with_rate(vec![], None, None, Some(rate_row));
+
+    let res = svc
+        .calculate_price(
+            &unconnected_pool(),
+            CalculatePriceRequest {
+                items: vec![item("SKU-1", None, dec!(10_000.00), 1)],
+                voucher_code: None,
+                base_shipping_fee: None,
+                payment_method: None,
+                shipping: Some(quoted),
+            },
+        )
+        .await
+        .expect("calculate_price should succeed");
+
+    return res.base_shipping_fee;
+}
+
+#[tokio::test]
+async fn instant_costs_what_matching_used_to_charge() {
+    let fee = fee_for(
+        rate("KINETIX_INSTANT", dec!(15000), dec!(3000), dec!(0), dec!(0)),
+        quote("KINETIX_INSTANT", dec!(8.5), 2_000),
+    )
+    .await;
+
+    assert_eq!(fee, dec!(40500.00));
+}
+
+#[tokio::test]
+async fn sameday_costs_what_matching_used_to_charge() {
+    let fee = fee_for(
+        rate("KINETIX_SAMEDAY", dec!(12000), dec!(2000), dec!(0), dec!(0)),
+        quote("KINETIX_SAMEDAY", dec!(20), 5_000),
+    )
+    .await;
+
+    assert_eq!(fee, dec!(52000.00));
+}
+
+#[tokio::test]
+async fn cargo_is_priced_by_weight_and_not_by_distance() {
+    let fee = fee_for(
+        rate("KINETIX_CARGO", dec!(25000), dec!(0), dec!(1000), dec!(0)),
+        quote("KINETIX_CARGO", dec!(300), 12_000),
+    )
+    .await;
+
+    assert_eq!(fee, dec!(37000.00));
+}
+
+#[tokio::test]
+async fn regular_charges_by_weight_across_distance_bands() {
+    let fee = fee_for(
+        rate("KINETIX_REGULAR", dec!(9000), dec!(0), dec!(0), dec!(1500)),
+        quote("KINETIX_REGULAR", dec!(250), 4_000),
+    )
+    .await;
+
+    assert_eq!(fee, dec!(24000.00));
+}
+
+#[tokio::test]
+async fn a_short_regular_journey_still_pays_one_band() {
+    let fee = fee_for(
+        rate("KINETIX_REGULAR", dec!(9000), dec!(0), dec!(0), dec!(1500)),
+        quote("KINETIX_REGULAR", dec!(30), 4_000),
+    )
+    .await;
+
+    assert_eq!(fee, dec!(15000.00));
+}
+
+#[tokio::test]
+async fn a_tier_with_no_rate_is_refused_rather_than_shipped_free() {
+    let svc = service_with_rate(vec![], None, None, None);
+
+    let err = svc
+        .calculate_price(
+            &unconnected_pool(),
+            CalculatePriceRequest {
+                items: vec![item("SKU-1", None, dec!(10_000.00), 1)],
+                voucher_code: None,
+                base_shipping_fee: None,
+                payment_method: None,
+                shipping: Some(quote("KINETIX_TELEPORT", dec!(5), 1_000)),
+            },
+        )
+        .await
+        .expect_err("a tier with no rate must not be priced");
+
+    assert!(
+        err.to_string().contains("KINETIX_TELEPORT"),
+        "the refusal should name the tier it has no rate for, got: {err}"
+    );
+}
+
+#[tokio::test]
+async fn a_shipping_voucher_discounts_the_fee_this_service_computed() {
+    let mut v = voucher(dec!(100.00), "FIXED", dec!(0.00), None);
+    v.code = "FREE_SHIP".to_string();
+
+    let svc = service_with_rate(
+        vec![],
+        Some(v),
+        None,
+        Some(rate(
+            "KINETIX_INSTANT",
+            dec!(15000),
+            dec!(3000),
+            dec!(0),
+            dec!(0),
+        )),
+    );
+
+    let res = svc
+        .calculate_price(
+            &unconnected_pool(),
+            CalculatePriceRequest {
+                items: vec![item("SKU-1", None, dec!(50_000.00), 1)],
+                voucher_code: Some("FREE_SHIP".to_string()),
+                base_shipping_fee: None,
+                payment_method: None,
+                shipping: Some(quote("KINETIX_INSTANT", dec!(1), 1_000)),
+            },
+        )
+        .await
+        .expect("calculate_price should succeed");
+
+    assert_eq!(res.base_shipping_fee, dec!(18000.00));
+    assert_eq!(res.shipping_discount, dec!(100.00));
+    assert_eq!(res.final_shipping_fee, dec!(17900.00));
+}
+
+#[tokio::test]
+async fn quoting_several_tiers_prices_the_ones_it_has_rates_for() {
+    let svc = service_with_rate(
+        vec![],
+        None,
+        None,
+        Some(rate(
+            "KINETIX_INSTANT",
+            dec!(15000),
+            dec!(3000),
+            dec!(0),
+            dec!(0),
+        )),
+    );
+
+    let quotes = svc
+        .quote_shipping(
+            &unconnected_pool(),
+            vec![
+                quote("KINETIX_INSTANT", dec!(2), 1_000),
+                quote("KINETIX_INSTANT", dec!(4), 1_000),
+            ],
+        )
+        .await
+        .expect("quote_shipping should succeed");
+
+    assert_eq!(quotes.len(), 2);
+    assert_eq!(quotes[0].base_shipping_fee, dec!(21000.00));
+    assert_eq!(quotes[1].base_shipping_fee, dec!(27000.00));
+    assert!(quotes.iter().all(|q| q.priced));
+}
+
+#[tokio::test]
+async fn a_tier_with_no_rate_comes_back_unpriced_rather_than_free() {
+    let svc = service_with_rate(vec![], None, None, None);
+
+    let quotes = svc
+        .quote_shipping(
+            &unconnected_pool(),
+            vec![quote("KINETIX_TELEPORT", dec!(2), 1_000)],
+        )
+        .await
+        .expect("quote_shipping should succeed");
+
+    assert_eq!(quotes.len(), 1);
+    assert!(!quotes[0].priced);
+    assert_eq!(quotes[0].base_shipping_fee, dec!(0.00));
 }

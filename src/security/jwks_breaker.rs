@@ -18,10 +18,8 @@ impl JwksBreaker {
 
     pub fn cooldown_remaining(&self) -> Option<Duration> {
         let open_until = *lock(&self.open_until);
-        match open_until {
-            Some(until) => return until.checked_duration_since(Instant::now()),
-            None => return None,
-        }
+
+        return open_until?.checked_duration_since(Instant::now());
     }
 
     pub fn refreshed_since(&self, mark: Instant) -> bool {
