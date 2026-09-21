@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use crate::error::AppError;
 use crate::models::{
     CreateDiscountRequest, CreateFlashSaleRequest, CreateVoucherRequest, Discount, FlashSale,
-    Voucher,
+    ShippingRate, Voucher,
 };
 use crate::DbPool;
 
@@ -12,6 +12,15 @@ pub trait DiscountRepositoryPort: Send + Sync {
     async fn find_all_active(&self, pool: &DbPool) -> Result<Vec<Discount>, AppError>;
     async fn create(&self, pool: &DbPool, req: CreateDiscountRequest)
         -> Result<Discount, AppError>;
+}
+
+#[async_trait]
+pub trait ShippingRateRepositoryPort: Send + Sync {
+    async fn find_by_tier(
+        &self,
+        pool: &DbPool,
+        tier: &str,
+    ) -> Result<Option<ShippingRate>, AppError>;
 }
 
 #[async_trait]

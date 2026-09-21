@@ -2,6 +2,7 @@ use tonic::Code;
 
 pub const KNOWN_GRPC_METHODS: &[&str] = &[
     "pricing.v1.PricingService/CalculatePrice",
+    "pricing.v1.PricingService/QuoteShipping",
     "pricing.v1.PricingService/RedeemVoucher",
     "pricing.v1.PricingService/ReleaseVoucherRedemption",
     "pricing.v1.PricingService/AllocateFlashSaleStock",

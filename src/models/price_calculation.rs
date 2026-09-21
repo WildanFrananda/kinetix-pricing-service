@@ -1,6 +1,8 @@
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
+use crate::models::shipping_rate::ShippingQuoteRequest;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PriceItemRequest {
     pub product_id: String,
@@ -15,6 +17,7 @@ pub struct CalculatePriceRequest {
     pub voucher_code: Option<String>,
     pub base_shipping_fee: Option<Decimal>,
     pub payment_method: Option<String>,
+    pub shipping: Option<ShippingQuoteRequest>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -73,10 +73,25 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    shipping_rates (service_tier) {
+        service_tier -> VarChar,
+        base_fee -> Numeric,
+        per_km_fee -> Numeric,
+        per_kg_fee -> Numeric,
+        per_kg_per_100km_fee -> Numeric,
+        currency -> Bpchar,
+        active -> Bool,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
 diesel::allow_tables_to_appear_in_same_query!(
     discounts,
     vouchers,
     flash_sales,
     voucher_redemptions,
     flash_sale_allocations,
+    shipping_rates,
 );

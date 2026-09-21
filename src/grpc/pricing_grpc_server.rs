@@ -2,7 +2,13 @@ use tonic::{Request, Response, Status};
 
 use uuid::Uuid;
 
-use crate::models::{CalculatePriceRequest as DomainCalcReq, PriceItemRequest as DomainItemReq};
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
+
+use crate::models::{
+    CalculatePriceRequest as DomainCalcReq, PriceItemRequest as DomainItemReq,
+    ShippingQuoteRequest as DomainShippingQuote,
+};
 use crate::money::{from_money, from_optional_money, to_money};
 use crate::repositories::{QuotaOutcome, QuotaRepository};
 use crate::services::PricingService;
@@ -15,9 +21,10 @@ use proto::pricing_service_server::PricingService as PricingGrpcTrait;
 pub use proto::pricing_service_server::PricingServiceServer;
 use proto::{
     AllocateFlashSaleStockRequest, AllocateFlashSaleStockResponse, CalculatePriceRequest,
-    CalculatePriceResponse, PriceItemResponse, RedeemVoucherRequest, RedeemVoucherResponse,
-    ReleaseFlashSaleAllocationRequest, ReleaseFlashSaleAllocationResponse,
-    ReleaseVoucherRedemptionRequest, ReleaseVoucherRedemptionResponse,
+    CalculatePriceResponse, PriceItemResponse, QuoteShippingRequest, QuoteShippingResponse,
+    QuotedShipping, RedeemVoucherRequest, RedeemVoucherResponse, ReleaseFlashSaleAllocationRequest,
+    ReleaseFlashSaleAllocationResponse, ReleaseVoucherRedemptionRequest,
+    ReleaseVoucherRedemptionResponse,
 };
 
 pub struct PricingGrpcServer {
@@ -26,6 +33,7 @@ pub struct PricingGrpcServer {
         crate::repositories::DiscountRepository,
         crate::repositories::VoucherRepository,
         crate::repositories::FlashSaleRepository,
+        crate::repositories::ShippingRateRepository,
     >,
 }
 
@@ -66,11 +74,21 @@ impl PricingGrpcTrait for PricingGrpcServer {
             });
         }
 
+        #[allow(deprecated)]
+        let deprecated_caller_fee = from_optional_money(&req.base_shipping_fee)?;
+
         let domain_req = DomainCalcReq {
             items: domain_items,
             voucher_code: req.voucher_code,
-            base_shipping_fee: from_optional_money(&req.base_shipping_fee)?,
+            base_shipping_fee: deprecated_caller_fee,
             payment_method: req.payment_method,
+            shipping: req.shipping.map(|quote| {
+                return DomainShippingQuote {
+                    service_tier: quote.service_tier,
+                    distance_km: Decimal::try_from(quote.distance_km).unwrap_or(dec!(0.00)),
+                    total_weight_grams: quote.total_weight_grams,
+                };
+            }),
         };
 
         let result = self
@@ -108,6 +126,46 @@ impl PricingGrpcTrait for PricingGrpcServer {
             shipping_discount: Some(to_money(result.shipping_discount)),
             final_shipping_fee: Some(to_money(result.final_shipping_fee)),
             payment_discount: Some(to_money(result.payment_discount)),
+        }));
+    }
+
+    async fn quote_shipping(
+        &self,
+        request: Request<QuoteShippingRequest>,
+    ) -> Result<Response<QuoteShippingResponse>, Status> {
+        let req = request.into_inner();
+
+        let journeys = req
+            .journeys
+            .into_iter()
+            .map(|journey| {
+                return DomainShippingQuote {
+                    service_tier: journey.service_tier,
+                    distance_km: Decimal::try_from(journey.distance_km).unwrap_or(dec!(0.00)),
+                    total_weight_grams: journey.total_weight_grams,
+                };
+            })
+            .collect();
+
+        let quotes = self
+            .pricing_service
+            .quote_shipping(&self.pool, journeys)
+            .await
+            .map_err(|e| {
+                return Status::internal(format!("Shipping quote error: {e}"));
+            })?;
+
+        return Ok(Response::new(QuoteShippingResponse {
+            quotes: quotes
+                .into_iter()
+                .map(|quote| {
+                    return QuotedShipping {
+                        service_tier: quote.service_tier,
+                        base_shipping_fee: Some(to_money(quote.base_shipping_fee)),
+                        priced: quote.priced,
+                    };
+                })
+                .collect(),
         }));
     }
 

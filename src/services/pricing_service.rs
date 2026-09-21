@@ -2,51 +2,66 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
 use crate::error::AppError;
-use crate::models::{CalculatePriceRequest, CalculatePriceResponse, PriceItemResponse};
+use crate::models::{
+    CalculatePriceRequest, CalculatePriceResponse, PriceItemResponse, QuotedShipping,
+    ShippingQuoteRequest,
+};
 use crate::repositories::{
     DiscountRepository, DiscountRepositoryPort, FlashSaleRepository, FlashSaleRepositoryPort,
-    VoucherRepository, VoucherRepositoryPort,
+    ShippingRateRepository, ShippingRateRepositoryPort, VoucherRepository, VoucherRepositoryPort,
 };
 use crate::traits::{
     DefaultDiscountEvaluator, DefaultVoucherEvaluator, DiscountEvaluator, VoucherEvaluator,
 };
 use crate::DbPool;
 
-pub struct PricingService<D, V, F>
+pub struct PricingService<D, V, F, S>
 where
     D: DiscountRepositoryPort,
     V: VoucherRepositoryPort,
     F: FlashSaleRepositoryPort,
+    S: ShippingRateRepositoryPort,
 {
     pub discount_repo: D,
     pub voucher_repo: V,
     pub flash_sale_repo: F,
+    pub shipping_rate_repo: S,
     pub discount_evaluator: Box<dyn DiscountEvaluator>,
     pub voucher_evaluator: Box<dyn VoucherEvaluator>,
 }
 
-impl Default for PricingService<DiscountRepository, VoucherRepository, FlashSaleRepository> {
+impl Default
+    for PricingService<
+        DiscountRepository,
+        VoucherRepository,
+        FlashSaleRepository,
+        ShippingRateRepository,
+    >
+{
     fn default() -> Self {
         return Self::new(
             DiscountRepository,
             VoucherRepository,
             FlashSaleRepository,
+            ShippingRateRepository,
             Box::new(DefaultDiscountEvaluator),
             Box::new(DefaultVoucherEvaluator),
         );
     }
 }
 
-impl<D, V, F> PricingService<D, V, F>
+impl<D, V, F, S> PricingService<D, V, F, S>
 where
     D: DiscountRepositoryPort,
     V: VoucherRepositoryPort,
     F: FlashSaleRepositoryPort,
+    S: ShippingRateRepositoryPort,
 {
     pub fn new(
         discount_repo: D,
         voucher_repo: V,
         flash_sale_repo: F,
+        shipping_rate_repo: S,
         discount_evaluator: Box<dyn DiscountEvaluator>,
         voucher_evaluator: Box<dyn VoucherEvaluator>,
     ) -> Self {
@@ -54,8 +69,61 @@ where
             discount_repo,
             voucher_repo,
             flash_sale_repo,
+            shipping_rate_repo,
             discount_evaluator,
             voucher_evaluator,
+        };
+    }
+
+    pub async fn quote_shipping(
+        &self,
+        pool: &DbPool,
+        journeys: Vec<ShippingQuoteRequest>,
+    ) -> Result<Vec<QuotedShipping>, AppError> {
+        let mut quotes = Vec::with_capacity(journeys.len());
+
+        for journey in journeys {
+            let rate = self
+                .shipping_rate_repo
+                .find_by_tier(pool, &journey.service_tier)
+                .await?;
+
+            let (base_shipping_fee, priced) = match rate {
+                Some(rate) => (rate.fee_for(&journey), true),
+                None => (dec!(0.00), false),
+            };
+
+            quotes.push(QuotedShipping {
+                service_tier: journey.service_tier,
+                base_shipping_fee,
+                priced,
+            });
+        }
+
+        return Ok(quotes);
+    }
+
+    async fn base_shipping_for(
+        &self,
+        pool: &DbPool,
+        req: &CalculatePriceRequest,
+    ) -> Result<Decimal, AppError> {
+        let Some(quote) = &req.shipping else {
+            return Ok(req.base_shipping_fee.unwrap_or(dec!(0.00)));
+        };
+
+        let rate = self
+            .shipping_rate_repo
+            .find_by_tier(pool, &quote.service_tier)
+            .await?;
+
+        return match rate {
+            Some(rate) => Ok(rate.fee_for(quote)),
+            None => Err(AppError::BadRequest(format!(
+                "no shipping rate for tier '{}', so this delivery cannot be priced here; \
+                 pricing refuses rather than charging nothing for a journey that will be made",
+                quote.service_tier
+            ))),
         };
     }
 
@@ -129,7 +197,7 @@ where
         let mut voucher_discount = dec!(0.00);
         let mut shipping_discount = dec!(0.00);
         let mut applied_voucher = None;
-        let base_shipping = req.base_shipping_fee.unwrap_or(dec!(0.00));
+        let base_shipping = self.base_shipping_for(pool, &req).await?;
 
         if let Some(code) = &req.voucher_code {
             if let Ok(Some(voucher)) = self.voucher_repo.find_by_code(pool, code).await {
