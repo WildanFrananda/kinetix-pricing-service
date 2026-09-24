@@ -23,20 +23,35 @@ fn a_different_domain_can_be_configured_without_touching_this_code() {
 
 #[test]
 fn an_id_from_another_trust_domain_names_nobody() {
-    assert_eq!(service_of("spiffe://prod.kinetix/service/order", "kinetix.local"), None);
-    assert_eq!(service_of("spiffe://kinetix.local/service/order", "prod.kinetix"), None);
+    assert_eq!(
+        service_of("spiffe://prod.kinetix/service/order", "kinetix.local"),
+        None
+    );
+    assert_eq!(
+        service_of("spiffe://kinetix.local/service/order", "prod.kinetix"),
+        None
+    );
 }
 
 #[test]
 fn a_domain_this_one_is_merely_a_prefix_of_is_refused() {
     assert_eq!(
-        service_of("spiffe://kinetix.local.example.com/service/order", "kinetix.local"),
+        service_of(
+            "spiffe://kinetix.local.example.com/service/order",
+            "kinetix.local"
+        ),
         None
     );
 }
 
 #[test]
 fn an_id_that_names_no_service_is_refused() {
-    assert_eq!(service_of("spiffe://kinetix.local/order", "kinetix.local"), None);
-    assert_eq!(service_of("https://kinetix.local/service/order", "kinetix.local"), None);
+    assert_eq!(
+        service_of("spiffe://kinetix.local/order", "kinetix.local"),
+        None
+    );
+    assert_eq!(
+        service_of("https://kinetix.local/service/order", "kinetix.local"),
+        None
+    );
 }
