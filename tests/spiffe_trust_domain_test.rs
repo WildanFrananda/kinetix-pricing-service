@@ -1,4 +1,4 @@
-use kinetix_pricing_service::security::spiffe::{service_of, trust_domain};
+use kinetix_pricing_service::security::spiffe::{service_of, trust_domain, trust_domains};
 
 #[test]
 fn an_unset_variable_keeps_the_domain_the_estate_runs_today() {
@@ -54,4 +54,28 @@ fn an_id_that_names_no_service_is_refused() {
         service_of("https://kinetix.local/service/order", "kinetix.local"),
         None
     );
+}
+
+#[test]
+fn an_unset_variable_is_one_domain_not_none() {
+    assert_eq!(trust_domains(), ["kinetix.local".to_string()]);
+}
+
+#[test]
+fn a_cutover_can_accept_both_domains_at_once() {
+    let both = ["kinetix.local", "prod.kinetix"];
+
+    for domain in both {
+        let id = format!("spiffe://{domain}/service/order");
+        let named = both.iter().find_map(|d| service_of(&id, d));
+        assert_eq!(named, Some("order".to_string()), "{id} was not placed");
+    }
+}
+
+#[test]
+fn a_domain_outside_the_list_is_still_refused() {
+    let accepted = ["kinetix.local", "prod.kinetix"];
+    let id = "spiffe://staging.kinetix/service/order";
+
+    assert_eq!(accepted.iter().find_map(|d| service_of(id, d)), None);
 }
