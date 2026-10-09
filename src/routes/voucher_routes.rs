@@ -5,6 +5,7 @@ use crate::error::AppError;
 use crate::guards::AdminOrMerchantGuard;
 use crate::models::{ApplyVoucherRequest, CreateVoucherRequest, Voucher};
 use crate::repositories::{VoucherRepository, VoucherRepositoryPort};
+use crate::services::{validate_percentage, PromotionService};
 use crate::traits::{DefaultVoucherEvaluator, VoucherEvaluator};
 use crate::DbPool;
 
@@ -12,10 +13,9 @@ use crate::DbPool;
 pub async fn create_voucher(
     auth: AdminOrMerchantGuard,
     pool: &State<DbPool>,
+    promotions: &State<PromotionService>,
     req: Json<CreateVoucherRequest>,
 ) -> Result<Json<Voucher>, AppError> {
-    let _caller: &str = &auth.principal_id;
-
     let payload = req.into_inner();
     if payload.code.trim().is_empty() {
         return Err(AppError::BadRequest(
@@ -28,8 +28,14 @@ pub async fn create_voucher(
         ));
     }
 
+    validate_percentage(&payload.discount_type, payload.value)?;
+
+    let owner = promotions
+        .owner_for(&auth.principal_id, &auth.role, None)
+        .await?;
+
     let repo = VoucherRepository;
-    let voucher = repo.create(pool.inner(), payload).await?;
+    let voucher = repo.create(pool.inner(), payload, owner).await?;
     return Ok(Json(voucher));
 }
 

@@ -13,6 +13,7 @@ diesel::table! {
         end_time -> Timestamptz,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
+        merchant_principal_id -> Nullable<VarChar>,
     }
 }
 
@@ -31,6 +32,7 @@ diesel::table! {
         expires_at -> Timestamptz,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
+        merchant_principal_id -> Nullable<VarChar>,
     }
 }
 
@@ -47,6 +49,7 @@ diesel::table! {
         end_time -> Timestamptz,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
+        merchant_principal_id -> Nullable<VarChar>,
     }
 }
 

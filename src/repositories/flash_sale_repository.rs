@@ -39,6 +39,7 @@ impl FlashSaleRepositoryPort for FlashSaleRepository {
         &self,
         pool: &DbPool,
         req: CreateFlashSaleRequest,
+        owner: Option<String>,
     ) -> Result<FlashSale, AppError> {
         let mut conn = pool.get().await?;
         let new_id = Uuid::new_v4();
@@ -56,6 +57,7 @@ impl FlashSaleRepositoryPort for FlashSaleRepository {
             end_time: req.end_time,
             created_at: now,
             updated_at: now,
+            merchant_principal_id: owner,
         };
 
         let record = diesel::insert_into(flash_sales)

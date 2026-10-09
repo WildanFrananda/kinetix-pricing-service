@@ -34,7 +34,12 @@ impl VoucherRepositoryPort for VoucherRepository {
         return Ok(record);
     }
 
-    async fn create(&self, pool: &DbPool, req: CreateVoucherRequest) -> Result<Voucher, AppError> {
+    async fn create(
+        &self,
+        pool: &DbPool,
+        req: CreateVoucherRequest,
+        owner: Option<String>,
+    ) -> Result<Voucher, AppError> {
         let mut conn = pool.get().await?;
         let new_id = Uuid::new_v4();
         let now = Utc::now();
@@ -53,6 +58,7 @@ impl VoucherRepositoryPort for VoucherRepository {
             expires_at: req.expires_at,
             created_at: now,
             updated_at: now,
+            merchant_principal_id: owner,
         };
 
         let record = diesel::insert_into(vouchers)

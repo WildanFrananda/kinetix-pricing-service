@@ -8,6 +8,9 @@ use std::time::Duration;
 
 use diesel::{Connection, PgConnection};
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
+use kinetix_pricing_service::clients::{
+    mesh_channel, CatalogProductDirectory, IdentityMerchantDirectory,
+};
 use kinetix_pricing_service::config::AppConfig;
 use kinetix_pricing_service::db::create_pool;
 use kinetix_pricing_service::grpc::{PricingGrpcServer, PricingServiceServer};
@@ -24,6 +27,7 @@ use kinetix_pricing_service::routes::{
 };
 use kinetix_pricing_service::security::jwt::JwtVerifier;
 use kinetix_pricing_service::security::{PeerGuard, ServiceIdentity};
+use kinetix_pricing_service::services::PromotionService;
 use tonic::transport::Server;
 use tonic_reflection::server::Builder;
 use tracing::{error, info, warn};
@@ -80,6 +84,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let service_identity = ServiceIdentity::load().map_err(|e| -> Box<dyn Error> { e.into() })?;
     let server_tls = service_identity.server_tls();
+
+    let identity_channel = mesh_channel(&app_cfg.identity_grpc_url, &service_identity)
+        .map_err(|e| -> Box<dyn Error> { e.into() })?;
+    let catalog_channel = mesh_channel(&app_cfg.catalog_grpc_url, &service_identity)
+        .map_err(|e| -> Box<dyn Error> { e.into() })?;
+    let promotion_service = PromotionService::new(
+        Arc::new(IdentityMerchantDirectory::new(identity_channel)),
+        Arc::new(CatalogProductDirectory::new(catalog_channel)),
+    );
 
     let peer_guard = PeerGuard::from_env().map_err(|e| -> Box<dyn Error> { e.into() })?;
 
@@ -140,6 +153,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     )
                     .manage(db_pool)
                     .manage(verifier)
+                    .manage(promotion_service)
                     .manage(metrics)
                     .mount(
                         "/",

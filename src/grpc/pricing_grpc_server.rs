@@ -82,6 +82,9 @@ impl PricingGrpcTrait for PricingGrpcServer {
             voucher_code: req.voucher_code,
             base_shipping_fee: deprecated_caller_fee,
             payment_method: req.payment_method,
+            merchant_principal_id: req
+                .merchant_principal_id
+                .filter(|merchant| return !merchant.trim().is_empty()),
             shipping: req.shipping.map(|quote| {
                 return DomainShippingQuote {
                     service_tier: quote.service_tier,
@@ -191,6 +194,9 @@ impl PricingGrpcTrait for PricingGrpcServer {
             &req.voucher_code,
             &req.order_number,
             &req.customer_principal_id,
+            req.merchant_principal_id
+                .as_deref()
+                .filter(|merchant| return !merchant.trim().is_empty()),
         )
         .await
         .map_err(|e| Status::internal(format!("could not redeem the voucher: {e}")))?;
@@ -222,6 +228,15 @@ impl PricingGrpcTrait for PricingGrpcServer {
                 already_redeemed: false,
                 remaining_quota: 0,
                 error: Some(error_detail("VOUCHER_NOT_FOUND", "no such voucher")),
+            },
+            QuotaOutcome::NotForThisMerchant => RedeemVoucherResponse {
+                success: false,
+                already_redeemed: false,
+                remaining_quota: 0,
+                error: Some(error_detail(
+                    "VOUCHER_NOT_FOR_THIS_MERCHANT",
+                    "this voucher belongs to another merchant's store",
+                )),
             },
         }));
     }
@@ -261,12 +276,14 @@ impl PricingGrpcTrait for PricingGrpcServer {
                 remaining_quota: remaining,
                 error: None,
             },
-            QuotaOutcome::Exhausted | QuotaOutcome::NotFound => ReleaseVoucherRedemptionResponse {
-                success: false,
-                already_released: false,
-                remaining_quota: 0,
-                error: Some(error_detail("VOUCHER_NOT_FOUND", "no such voucher")),
-            },
+            QuotaOutcome::Exhausted | QuotaOutcome::NotFound | QuotaOutcome::NotForThisMerchant => {
+                ReleaseVoucherRedemptionResponse {
+                    success: false,
+                    already_released: false,
+                    remaining_quota: 0,
+                    error: Some(error_detail("VOUCHER_NOT_FOUND", "no such voucher")),
+                }
+            }
         }));
     }
 
@@ -317,12 +334,14 @@ impl PricingGrpcTrait for PricingGrpcServer {
                     "this flash sale has not got that many units left",
                 )),
             },
-            QuotaOutcome::NotFound => AllocateFlashSaleStockResponse {
-                success: false,
-                already_allocated: false,
-                remaining_stock: 0,
-                error: Some(error_detail("FLASH_SALE_NOT_FOUND", "no such flash sale")),
-            },
+            QuotaOutcome::NotFound | QuotaOutcome::NotForThisMerchant => {
+                AllocateFlashSaleStockResponse {
+                    success: false,
+                    already_allocated: false,
+                    remaining_stock: 0,
+                    error: Some(error_detail("FLASH_SALE_NOT_FOUND", "no such flash sale")),
+                }
+            }
         }));
     }
 
@@ -358,7 +377,7 @@ impl PricingGrpcTrait for PricingGrpcServer {
                 remaining_stock: remaining,
                 error: None,
             },
-            QuotaOutcome::Exhausted | QuotaOutcome::NotFound => {
+            QuotaOutcome::Exhausted | QuotaOutcome::NotFound | QuotaOutcome::NotForThisMerchant => {
                 ReleaseFlashSaleAllocationResponse {
                     success: false,
                     already_released: false,

@@ -33,6 +33,7 @@ impl DiscountRepositoryPort for DiscountRepository {
         &self,
         pool: &DbPool,
         req: CreateDiscountRequest,
+        owner: Option<String>,
     ) -> Result<Discount, AppError> {
         let mut conn = pool.get().await?;
         let new_id = Uuid::new_v4();
@@ -50,6 +51,7 @@ impl DiscountRepositoryPort for DiscountRepository {
             end_time: req.end_time,
             created_at: now,
             updated_at: now,
+            merchant_principal_id: owner,
         };
 
         let record = diesel::insert_into(discounts)

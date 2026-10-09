@@ -34,6 +34,7 @@ fn blank_redemption() -> RedeemVoucherRequest {
         order_number: String::new(),
         customer_principal_id: String::new(),
         idempotency_key: None,
+        merchant_principal_id: None,
     };
 }
 

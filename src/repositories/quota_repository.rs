@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::models::{FlashSaleAllocation, VoucherRedemption};
+use crate::traits::applies_to_cart;
 use crate::DbPool;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -14,6 +15,7 @@ pub enum QuotaOutcome {
     AlreadyDone { remaining: i32 },
     Exhausted,
     NotFound,
+    NotForThisMerchant,
 }
 
 pub struct QuotaRepository;
@@ -24,6 +26,7 @@ impl QuotaRepository {
         code_value: &str,
         order: &str,
         customer: &str,
+        merchant: Option<&str>,
     ) -> Result<QuotaOutcome, AppError> {
         use crate::schema::voucher_redemptions::dsl as ledger;
         use crate::schema::vouchers::dsl as v;
@@ -32,19 +35,24 @@ impl QuotaRepository {
         let code_owned = code_value.to_string();
         let order_owned = order.to_string();
         let customer_owned = customer.to_string();
+        let merchant_owned = merchant.map(str::to_string);
 
         conn.transaction::<_, AppError, _>(|conn| {
             async move {
-                let voucher: Option<(i32, i32)> = v::vouchers
+                let voucher: Option<(i32, i32, Option<String>)> = v::vouchers
                     .filter(v::code.eq(&code_owned))
-                    .select((v::quota, v::used_count))
+                    .select((v::quota, v::used_count, v::merchant_principal_id))
                     .first(conn)
                     .await
                     .optional()?;
 
-                let Some((quota_value, _)) = voucher else {
+                let Some((quota_value, _, owner)) = voucher else {
                     return Ok(QuotaOutcome::NotFound);
                 };
+
+                if !applies_to_cart(owner.as_deref(), merchant_owned.as_deref()) {
+                    return Ok(QuotaOutcome::NotForThisMerchant);
+                }
 
                 let existing: Option<VoucherRedemption> = ledger::voucher_redemptions
                     .filter(ledger::voucher_code.eq(&code_owned))

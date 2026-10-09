@@ -21,5 +21,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &[contracts.to_str().unwrap()],
         )?;
 
+    tonic_build::configure().build_server(false).compile(
+        &[
+            contracts.join("catalog/v1/catalog.proto").to_str().unwrap(),
+            contracts
+                .join("identity/v1/identity.proto")
+                .to_str()
+                .unwrap(),
+        ],
+        &[contracts.to_str().unwrap()],
+    )?;
+
     return Ok(());
 }
