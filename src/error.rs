@@ -30,6 +30,9 @@ pub enum AppError {
     #[error("Unauthorized access")]
     Unauthorized,
 
+    #[error("Forbidden: {0}")]
+    Forbidden(String),
+
     #[error("Upstream unavailable: {0}")]
     Unavailable(String),
 }
@@ -93,6 +96,7 @@ impl<'r> Responder<'r, 'static> for AppError {
             AppError::NotFound(msg) => (Status::NotFound, msg.clone()),
             AppError::BadRequest(msg) => (Status::BadRequest, msg.clone()),
             AppError::Unauthorized => (Status::Unauthorized, "Unauthorized".to_string()),
+            AppError::Forbidden(msg) => (Status::Forbidden, msg.clone()),
             AppError::Unavailable(e) => {
                 tracing::error!(
                     request_id = request_id(req),

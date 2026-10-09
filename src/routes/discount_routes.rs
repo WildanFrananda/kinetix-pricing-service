@@ -5,16 +5,16 @@ use crate::error::AppError;
 use crate::guards::AdminOrMerchantGuard;
 use crate::models::{CreateDiscountRequest, Discount};
 use crate::repositories::{DiscountRepository, DiscountRepositoryPort};
+use crate::services::{validate_percentage, PromotionService};
 use crate::DbPool;
 
 #[post("/api/v1/discounts", data = "<req>")]
 pub async fn create_discount(
     auth: AdminOrMerchantGuard,
     pool: &State<DbPool>,
+    promotions: &State<PromotionService>,
     req: Json<CreateDiscountRequest>,
 ) -> Result<Json<Discount>, AppError> {
-    let _caller: &str = &auth.principal_id;
-
     let payload = req.into_inner();
     if payload.value <= rust_decimal_macros::dec!(0.0) {
         return Err(AppError::BadRequest(
@@ -27,8 +27,18 @@ pub async fn create_discount(
         ));
     }
 
+    validate_percentage(&payload.discount_type, payload.value)?;
+
+    let owner = promotions
+        .owner_for(
+            &auth.principal_id,
+            &auth.role,
+            payload.target_product_id.as_deref(),
+        )
+        .await?;
+
     let repo = DiscountRepository;
-    let discount = repo.create(pool.inner(), payload).await?;
+    let discount = repo.create(pool.inner(), payload, owner).await?;
     return Ok(Json(discount));
 }
 

@@ -5,16 +5,16 @@ use crate::error::AppError;
 use crate::guards::AdminOrMerchantGuard;
 use crate::models::{CreateFlashSaleRequest, FlashSale};
 use crate::repositories::{FlashSaleRepository, FlashSaleRepositoryPort};
+use crate::services::PromotionService;
 use crate::DbPool;
 
 #[post("/api/v1/flash-sales", data = "<req>")]
 pub async fn create_flash_sale(
     auth: AdminOrMerchantGuard,
     pool: &State<DbPool>,
+    promotions: &State<PromotionService>,
     req: Json<CreateFlashSaleRequest>,
 ) -> Result<Json<FlashSale>, AppError> {
-    let _caller: &str = &auth.principal_id;
-
     let payload = req.into_inner();
     if payload.flash_price <= rust_decimal_macros::dec!(0.0) {
         return Err(AppError::BadRequest(
@@ -27,8 +27,12 @@ pub async fn create_flash_sale(
         ));
     }
 
+    let owner = promotions
+        .owner_for(&auth.principal_id, &auth.role, Some(&payload.product_id))
+        .await?;
+
     let repo = FlashSaleRepository;
-    let flash_sale = repo.create(pool.inner(), payload).await?;
+    let flash_sale = repo.create(pool.inner(), payload, owner).await?;
     return Ok(Json(flash_sale));
 }
 

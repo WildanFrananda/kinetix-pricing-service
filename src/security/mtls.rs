@@ -12,19 +12,19 @@ pub struct ServiceIdentity {
 impl ServiceIdentity {
     pub fn load() -> Result<Self, String> {
         let dir: PathBuf = std::env::var("KINETIX_PKI_DIR")
-            .unwrap_or_else(|_| DEFAULT_PKI_DIR.to_string())
+            .unwrap_or_else(|_| return DEFAULT_PKI_DIR.to_string())
             .into();
 
         let read = |name: &str| -> Result<Vec<u8>, String> {
             let path = dir.join(name);
-            std::fs::read(&path).map_err(|e| {
-                format!(
+            return std::fs::read(&path).map_err(|e| {
+                return format!(
                     "cannot read {}: {e}. The service PKI is mounted at {}; issue it with \
                      kinetix-infrastructure/bin/kinetix-pki issue.",
                     path.display(),
                     dir.display()
-                )
-            })
+                );
+            });
         };
 
         let cert_pem = read("tls.crt")?;
@@ -52,15 +52,15 @@ impl ServiceIdentity {
     }
 
     pub fn server_tls(&self) -> ServerTlsConfig {
-        ServerTlsConfig::new()
+        return ServerTlsConfig::new()
             .identity(Identity::from_pem(&self.cert_pem, &self.key_pem))
-            .client_ca_root(Certificate::from_pem(&self.ca_pem))
+            .client_ca_root(Certificate::from_pem(&self.ca_pem));
     }
 
     pub fn client_tls(&self, domain_name: &str) -> ClientTlsConfig {
-        ClientTlsConfig::new()
+        return ClientTlsConfig::new()
             .identity(Identity::from_pem(&self.cert_pem, &self.key_pem))
             .ca_certificate(Certificate::from_pem(&self.ca_pem))
-            .domain_name(domain_name)
+            .domain_name(domain_name);
     }
 }

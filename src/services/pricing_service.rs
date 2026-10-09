@@ -11,7 +11,8 @@ use crate::repositories::{
     ShippingRateRepository, ShippingRateRepositoryPort, VoucherRepository, VoucherRepositoryPort,
 };
 use crate::traits::{
-    DefaultDiscountEvaluator, DefaultVoucherEvaluator, DiscountEvaluator, VoucherEvaluator,
+    applies_to_cart, DefaultDiscountEvaluator, DefaultVoucherEvaluator, DiscountEvaluator,
+    VoucherEvaluator,
 };
 use crate::DbPool;
 
@@ -132,7 +133,16 @@ where
         pool: &DbPool,
         req: CalculatePriceRequest,
     ) -> Result<CalculatePriceResponse, AppError> {
-        let active_discounts = self.discount_repo.find_all_active(pool).await?;
+        let cart_merchant = req.merchant_principal_id.as_deref();
+        let active_discounts: Vec<_> = self
+            .discount_repo
+            .find_all_active(pool)
+            .await?
+            .into_iter()
+            .filter(|discount| {
+                return applies_to_cart(discount.merchant_principal_id.as_deref(), cart_merchant);
+            })
+            .collect();
         let mut item_responses = Vec::new();
         let mut subtotal = dec!(0.00);
         let mut total_item_savings = dec!(0.00);
@@ -148,7 +158,9 @@ where
                 .find_active_for_product(pool, &item.product_id)
                 .await
             {
-                if flash.flash_price < final_unit_price {
+                if applies_to_cart(flash.merchant_principal_id.as_deref(), cart_merchant)
+                    && flash.flash_price < final_unit_price
+                {
                     final_unit_price = flash.flash_price;
                     applied_flash_sale = Some(flash.id.to_string());
                 }
@@ -201,7 +213,9 @@ where
 
         if let Some(code) = &req.voucher_code {
             if let Ok(Some(voucher)) = self.voucher_repo.find_by_code(pool, code).await {
-                if self.voucher_evaluator.is_eligible(&voucher, subtotal) {
+                if applies_to_cart(voucher.merchant_principal_id.as_deref(), cart_merchant)
+                    && self.voucher_evaluator.is_eligible(&voucher, subtotal)
+                {
                     if voucher.discount_type == "SHIPPING" || voucher.code.contains("FREE_SHIP") {
                         shipping_discount = base_shipping.min(
                             self.voucher_evaluator

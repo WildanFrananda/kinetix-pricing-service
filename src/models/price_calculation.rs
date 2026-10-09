@@ -18,6 +18,7 @@ pub struct CalculatePriceRequest {
     pub base_shipping_fee: Option<Decimal>,
     pub payment_method: Option<String>,
     pub shipping: Option<ShippingQuoteRequest>,
+    pub merchant_principal_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

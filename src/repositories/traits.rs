@@ -10,8 +10,12 @@ use crate::DbPool;
 #[async_trait]
 pub trait DiscountRepositoryPort: Send + Sync {
     async fn find_all_active(&self, pool: &DbPool) -> Result<Vec<Discount>, AppError>;
-    async fn create(&self, pool: &DbPool, req: CreateDiscountRequest)
-        -> Result<Discount, AppError>;
+    async fn create(
+        &self,
+        pool: &DbPool,
+        req: CreateDiscountRequest,
+        owner: Option<String>,
+    ) -> Result<Discount, AppError>;
 }
 
 #[async_trait]
@@ -26,7 +30,12 @@ pub trait ShippingRateRepositoryPort: Send + Sync {
 #[async_trait]
 pub trait VoucherRepositoryPort: Send + Sync {
     async fn find_by_code(&self, pool: &DbPool, code: &str) -> Result<Option<Voucher>, AppError>;
-    async fn create(&self, pool: &DbPool, req: CreateVoucherRequest) -> Result<Voucher, AppError>;
+    async fn create(
+        &self,
+        pool: &DbPool,
+        req: CreateVoucherRequest,
+        owner: Option<String>,
+    ) -> Result<Voucher, AppError>;
 }
 
 #[async_trait]
@@ -40,5 +49,6 @@ pub trait FlashSaleRepositoryPort: Send + Sync {
         &self,
         pool: &DbPool,
         req: CreateFlashSaleRequest,
+        owner: Option<String>,
     ) -> Result<FlashSale, AppError>;
 }

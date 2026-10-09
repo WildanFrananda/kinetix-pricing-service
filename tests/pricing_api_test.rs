@@ -34,6 +34,7 @@ fn discount(value: Decimal, kind: &str, product: Option<&str>, category: Option<
         end_time: now + Duration::days(1),
         created_at: now,
         updated_at: now,
+        merchant_principal_id: None,
     };
 }
 
@@ -58,6 +59,7 @@ fn voucher(
         expires_at: now + Duration::days(7),
         created_at: now,
         updated_at: now,
+        merchant_principal_id: None,
     };
 }
 
@@ -185,6 +187,7 @@ impl DiscountRepositoryPort for FakeDiscounts {
         &self,
         _pool: &DbPool,
         _req: CreateDiscountRequest,
+        _owner: Option<String>,
     ) -> Result<Discount, AppError> {
         unimplemented!("not used by these tests");
     }
@@ -199,6 +202,7 @@ impl VoucherRepositoryPort for FakeVouchers {
         &self,
         _pool: &DbPool,
         _req: CreateVoucherRequest,
+        _owner: Option<String>,
     ) -> Result<Voucher, AppError> {
         unimplemented!("not used by these tests");
     }
@@ -217,6 +221,7 @@ impl FlashSaleRepositoryPort for FakeFlashSales {
         &self,
         _pool: &DbPool,
         _req: CreateFlashSaleRequest,
+        _owner: Option<String>,
     ) -> Result<FlashSale, AppError> {
         unimplemented!("not used by these tests");
     }
@@ -301,6 +306,7 @@ async fn a_flash_sale_wins_over_a_discount_on_the_same_item() {
         end_time: now + Duration::hours(1),
         created_at: now,
         updated_at: now,
+        merchant_principal_id: None,
     };
     let svc = service(
         vec![discount(dec!(10.00), "PERCENTAGE", None, None)],
@@ -312,6 +318,7 @@ async fn a_flash_sale_wins_over_a_discount_on_the_same_item() {
         .calculate_price(
             &unconnected_pool(),
             CalculatePriceRequest {
+                merchant_principal_id: None,
                 items: vec![item("SKU-1", None, dec!(100.00), 1)],
                 voucher_code: None,
                 base_shipping_fee: None,
@@ -338,6 +345,7 @@ async fn the_wallet_payment_discount_is_capped_at_25000() {
         .calculate_price(
             &unconnected_pool(),
             CalculatePriceRequest {
+                merchant_principal_id: None,
                 items: vec![item("SKU-1", None, dec!(1_000_000.00), 1)],
                 voucher_code: None,
                 base_shipping_fee: None,
@@ -362,6 +370,7 @@ async fn shipping_is_never_charged_below_zero() {
         .calculate_price(
             &unconnected_pool(),
             CalculatePriceRequest {
+                merchant_principal_id: None,
                 items: vec![item("SKU-1", None, dec!(50_000.00), 1)],
                 voucher_code: Some("FREE_SHIP".to_string()),
                 base_shipping_fee: Some(dec!(20.00)),
@@ -391,6 +400,7 @@ async fn fee_for(rate_row: ShippingRate, quoted: ShippingQuoteRequest) -> rust_d
         .calculate_price(
             &unconnected_pool(),
             CalculatePriceRequest {
+                merchant_principal_id: None,
                 items: vec![item("SKU-1", None, dec!(10_000.00), 1)],
                 voucher_code: None,
                 base_shipping_fee: None,
@@ -467,6 +477,7 @@ async fn a_tier_with_no_rate_is_refused_rather_than_shipped_free() {
         .calculate_price(
             &unconnected_pool(),
             CalculatePriceRequest {
+                merchant_principal_id: None,
                 items: vec![item("SKU-1", None, dec!(10_000.00), 1)],
                 voucher_code: None,
                 base_shipping_fee: None,
@@ -505,6 +516,7 @@ async fn a_shipping_voucher_discounts_the_fee_this_service_computed() {
         .calculate_price(
             &unconnected_pool(),
             CalculatePriceRequest {
+                merchant_principal_id: None,
                 items: vec![item("SKU-1", None, dec!(50_000.00), 1)],
                 voucher_code: Some("FREE_SHIP".to_string()),
                 base_shipping_fee: None,
@@ -567,4 +579,102 @@ async fn a_tier_with_no_rate_comes_back_unpriced_rather_than_free() {
     assert_eq!(quotes.len(), 1);
     assert!(!quotes[0].priced);
     assert_eq!(quotes[0].base_shipping_fee, dec!(0.00));
+}
+
+fn cart(merchant: Option<&str>, code: Option<&str>) -> CalculatePriceRequest {
+    return CalculatePriceRequest {
+        merchant_principal_id: merchant.map(str::to_string),
+        items: vec![item("SKU-1", Some("shoes"), dec!(100.00), 1)],
+        voucher_code: code.map(str::to_string),
+        base_shipping_fee: None,
+        payment_method: None,
+        shipping: None,
+    };
+}
+
+#[tokio::test]
+async fn a_sellers_discount_reaches_only_their_own_cart() {
+    let mut owned = discount(dec!(10.00), "PERCENTAGE", None, Some("shoes"));
+    owned.merchant_principal_id = Some("merchant-a".to_string());
+
+    for (merchant, expected) in [
+        (Some("merchant-a"), dec!(90.00)),
+        (Some("merchant-b"), dec!(100.00)),
+        (None, dec!(100.00)),
+    ] {
+        let res = service(vec![owned.clone()], None, None)
+            .calculate_price(&unconnected_pool(), cart(merchant, None))
+            .await
+            .expect("calculate_price should succeed");
+
+        assert_eq!(
+            res.items[0].final_unit_price, expected,
+            "cart of {merchant:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_platform_discount_reaches_every_cart() {
+    let platform = discount(dec!(10.00), "PERCENTAGE", None, Some("shoes"));
+
+    for merchant in [Some("merchant-a"), Some("merchant-b"), None] {
+        let res = service(vec![platform.clone()], None, None)
+            .calculate_price(&unconnected_pool(), cart(merchant, None))
+            .await
+            .expect("calculate_price should succeed");
+
+        assert_eq!(
+            res.items[0].final_unit_price,
+            dec!(90.00),
+            "cart of {merchant:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_sellers_voucher_is_not_applied_to_another_merchants_cart() {
+    let mut owned = voucher(dec!(20.00), "FIXED", dec!(0.00), None);
+    owned.merchant_principal_id = Some("merchant-a".to_string());
+
+    let elsewhere = service(vec![], Some(owned.clone()), None)
+        .calculate_price(&unconnected_pool(), cart(Some("merchant-b"), Some("PROMO")))
+        .await
+        .expect("calculate_price should succeed");
+    assert_eq!(elsewhere.voucher_discount, dec!(0.00));
+    assert!(elsewhere.applied_voucher.is_none());
+
+    let at_home = service(vec![], Some(owned), None)
+        .calculate_price(&unconnected_pool(), cart(Some("merchant-a"), Some("PROMO")))
+        .await
+        .expect("calculate_price should succeed");
+    assert_eq!(at_home.voucher_discount, dec!(20.00));
+    assert_eq!(at_home.applied_voucher.as_deref(), Some("PROMO"));
+}
+
+#[tokio::test]
+async fn a_sellers_flash_sale_is_not_applied_to_another_merchants_cart() {
+    let now = Utc::now();
+    let flash = FlashSale {
+        id: Uuid::new_v4(),
+        title: "flash".to_string(),
+        product_id: "SKU-1".to_string(),
+        flash_price: dec!(1.00),
+        stock_limit: 10,
+        stock_sold: 0,
+        active: true,
+        start_time: now - Duration::hours(1),
+        end_time: now + Duration::hours(1),
+        created_at: now,
+        updated_at: now,
+        merchant_principal_id: Some("merchant-a".to_string()),
+    };
+
+    let res = service(vec![], None, Some(flash))
+        .calculate_price(&unconnected_pool(), cart(Some("merchant-b"), None))
+        .await
+        .expect("calculate_price should succeed");
+
+    assert_eq!(res.items[0].final_unit_price, dec!(100.00));
+    assert!(res.items[0].applied_flash_sale.is_none());
 }
