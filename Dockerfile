@@ -45,7 +45,13 @@ FROM debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe6
 # this image has no way at all to make an HTTP request, and the service could only be checked
 # by "is the process alive" — which is exactly how it ran for its whole life against a database
 # with no tables.
-RUN apt-get update && apt-get install --no-install-recommends -y \
+#
+# `upgrade` as well as `install`: the base is pinned by digest, and a pinned digest stops receiving
+# Debian's security updates. CI's image scan fails the build on a CRITICAL that has a fix — perl-base
+# at deb12u3 on 2026-10-09 — and this is where that fix arrives. The digest still decides the release.
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && apt-get install --no-install-recommends -y \
         libpq5 ca-certificates curl \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 10001 pricing \
