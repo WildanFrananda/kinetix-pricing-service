@@ -174,6 +174,47 @@ fn an_ineligible_voucher_pays_out_nothing() {
     assert_eq!(evaluator.calculate_discount(&v, dec!(150.00)), dec!(0.00));
 }
 
+struct FailingVouchers;
+struct FailingFlashSales;
+
+#[async_trait]
+impl VoucherRepositoryPort for FailingVouchers {
+    async fn find_by_code(&self, _pool: &DbPool, _code: &str) -> Result<Option<Voucher>, AppError> {
+        return Err(AppError::Unavailable(
+            "the voucher table did not answer".to_string(),
+        ));
+    }
+    async fn create(
+        &self,
+        _pool: &DbPool,
+        _req: CreateVoucherRequest,
+        _owner: Option<String>,
+    ) -> Result<Voucher, AppError> {
+        unimplemented!("not used by these tests");
+    }
+}
+
+#[async_trait]
+impl FlashSaleRepositoryPort for FailingFlashSales {
+    async fn find_active_for_product(
+        &self,
+        _pool: &DbPool,
+        _product_id: &str,
+    ) -> Result<Option<FlashSale>, AppError> {
+        return Err(AppError::Unavailable(
+            "the flash sale table did not answer".to_string(),
+        ));
+    }
+    async fn create(
+        &self,
+        _pool: &DbPool,
+        _req: CreateFlashSaleRequest,
+        _owner: Option<String>,
+    ) -> Result<FlashSale, AppError> {
+        unimplemented!("not used by these tests");
+    }
+}
+
 struct FakeDiscounts(Vec<Discount>);
 struct FakeVouchers(Option<Voucher>);
 struct FakeFlashSales(Option<FlashSale>);
@@ -322,7 +363,6 @@ async fn a_flash_sale_wins_over_a_discount_on_the_same_item() {
                 items: vec![item("SKU-1", None, dec!(100.00), 1)],
                 voucher_code: None,
                 base_shipping_fee: None,
-                payment_method: None,
                 shipping: None,
             },
         )
@@ -338,30 +378,7 @@ async fn a_flash_sale_wins_over_a_discount_on_the_same_item() {
 }
 
 #[tokio::test]
-async fn the_wallet_payment_discount_is_capped_at_25000() {
-    let svc = service(vec![], None, None);
-
-    let res = svc
-        .calculate_price(
-            &unconnected_pool(),
-            CalculatePriceRequest {
-                merchant_principal_id: None,
-                items: vec![item("SKU-1", None, dec!(1_000_000.00), 1)],
-                voucher_code: None,
-                base_shipping_fee: None,
-                payment_method: Some("INTERNAL_WALLET".to_string()),
-                shipping: None,
-            },
-        )
-        .await
-        .expect("calculate_price should succeed");
-
-    assert_eq!(res.payment_discount, dec!(25000.00));
-    assert_eq!(res.final_total, dec!(975000.00));
-}
-
-#[tokio::test]
-async fn shipping_is_never_charged_below_zero() {
+async fn a_voucher_coded_free_ship_discounts_the_goods_and_the_courier_keeps_the_fee() {
     let mut v = voucher(dec!(100.00), "FIXED", dec!(0.00), None);
     v.code = "FREE_SHIP".to_string();
     let svc = service(vec![], Some(v), None);
@@ -374,15 +391,15 @@ async fn shipping_is_never_charged_below_zero() {
                 items: vec![item("SKU-1", None, dec!(50_000.00), 1)],
                 voucher_code: Some("FREE_SHIP".to_string()),
                 base_shipping_fee: Some(dec!(20.00)),
-                payment_method: None,
                 shipping: None,
             },
         )
         .await
         .expect("calculate_price should succeed");
 
-    assert_eq!(res.final_shipping_fee, dec!(0.00));
-    assert_eq!(res.shipping_discount, dec!(20.00));
+    assert_eq!(res.final_shipping_fee, dec!(20.00));
+    assert_eq!(res.voucher_discount, dec!(100.00));
+    assert_eq!(res.final_total, dec!(49_920.00));
 }
 
 fn quote(tier: &str, distance_km: rust_decimal::Decimal, grams: i64) -> ShippingQuoteRequest {
@@ -404,7 +421,6 @@ async fn fee_for(rate_row: ShippingRate, quoted: ShippingQuoteRequest) -> rust_d
                 items: vec![item("SKU-1", None, dec!(10_000.00), 1)],
                 voucher_code: None,
                 base_shipping_fee: None,
-                payment_method: None,
                 shipping: Some(quoted),
             },
         )
@@ -481,7 +497,6 @@ async fn a_tier_with_no_rate_is_refused_rather_than_shipped_free() {
                 items: vec![item("SKU-1", None, dec!(10_000.00), 1)],
                 voucher_code: None,
                 base_shipping_fee: None,
-                payment_method: None,
                 shipping: Some(quote("KINETIX_TELEPORT", dec!(5), 1_000)),
             },
         )
@@ -495,7 +510,7 @@ async fn a_tier_with_no_rate_is_refused_rather_than_shipped_free() {
 }
 
 #[tokio::test]
-async fn a_shipping_voucher_discounts_the_fee_this_service_computed() {
+async fn the_courier_is_paid_the_fee_this_service_computed_whatever_the_voucher() {
     let mut v = voucher(dec!(100.00), "FIXED", dec!(0.00), None);
     v.code = "FREE_SHIP".to_string();
 
@@ -520,7 +535,6 @@ async fn a_shipping_voucher_discounts_the_fee_this_service_computed() {
                 items: vec![item("SKU-1", None, dec!(50_000.00), 1)],
                 voucher_code: Some("FREE_SHIP".to_string()),
                 base_shipping_fee: None,
-                payment_method: None,
                 shipping: Some(quote("KINETIX_INSTANT", dec!(1), 1_000)),
             },
         )
@@ -528,8 +542,8 @@ async fn a_shipping_voucher_discounts_the_fee_this_service_computed() {
         .expect("calculate_price should succeed");
 
     assert_eq!(res.base_shipping_fee, dec!(18000.00));
-    assert_eq!(res.shipping_discount, dec!(100.00));
-    assert_eq!(res.final_shipping_fee, dec!(17900.00));
+    assert_eq!(res.final_shipping_fee, dec!(18000.00));
+    assert_eq!(res.voucher_discount, dec!(100.00));
 }
 
 #[tokio::test]
@@ -587,7 +601,6 @@ fn cart(merchant: Option<&str>, code: Option<&str>) -> CalculatePriceRequest {
         items: vec![item("SKU-1", Some("shoes"), dec!(100.00), 1)],
         voucher_code: code.map(str::to_string),
         base_shipping_fee: None,
-        payment_method: None,
         shipping: None,
     };
 }
@@ -677,4 +690,63 @@ async fn a_sellers_flash_sale_is_not_applied_to_another_merchants_cart() {
 
     assert_eq!(res.items[0].final_unit_price, dec!(100.00));
     assert!(res.items[0].applied_flash_sale.is_none());
+}
+
+#[tokio::test]
+async fn a_voucher_that_cannot_be_looked_up_fails_the_price_rather_than_dropping_it() {
+    let svc = PricingService::new(
+        FakeDiscounts(vec![]),
+        FailingVouchers,
+        FakeFlashSales(None),
+        FakeShippingRates(None),
+        Box::new(DefaultDiscountEvaluator),
+        Box::new(DefaultVoucherEvaluator),
+    );
+
+    let res = svc
+        .calculate_price(&unconnected_pool(), cart(None, Some("SHOP10")))
+        .await;
+
+    assert!(matches!(res, Err(AppError::Unavailable(_))), "{res:?}");
+}
+
+#[tokio::test]
+async fn a_flash_sale_that_cannot_be_looked_up_fails_the_price_rather_than_dropping_it() {
+    let svc = PricingService::new(
+        FakeDiscounts(vec![]),
+        FakeVouchers(None),
+        FailingFlashSales,
+        FakeShippingRates(None),
+        Box::new(DefaultDiscountEvaluator),
+        Box::new(DefaultVoucherEvaluator),
+    );
+
+    let res = svc
+        .calculate_price(&unconnected_pool(), cart(None, None))
+        .await;
+
+    assert!(matches!(res, Err(AppError::Unavailable(_))), "{res:?}");
+}
+
+#[tokio::test]
+async fn a_voucher_of_a_kind_this_service_does_not_price_is_not_applied() {
+    let v = voucher(dec!(100.00), "SHIPPING", dec!(0.00), None);
+    let svc = service(vec![], Some(v), None);
+
+    let res = svc
+        .calculate_price(&unconnected_pool(), cart(None, Some("PROMO")))
+        .await
+        .expect("calculate_price should succeed");
+
+    assert_eq!(res.applied_voucher, None);
+    assert_eq!(res.voucher_discount, dec!(0.00));
+    assert_eq!(res.final_total, dec!(100.00));
+}
+
+#[test]
+fn a_discount_of_a_kind_this_service_does_not_price_saves_nothing() {
+    let evaluator = DefaultDiscountEvaluator;
+    let d = discount(dec!(100.00), "SHIPPING", None, None);
+
+    assert_eq!(evaluator.calculate_savings(&d, dec!(100.00)), dec!(0.00));
 }

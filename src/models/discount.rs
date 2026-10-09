@@ -67,8 +67,8 @@ pub struct Discount {
 }
 
 impl Discount {
-    pub fn get_discount_type(&self) -> DiscountType {
-        return DiscountType::from_str(&self.discount_type).unwrap_or(DiscountType::Percentage);
+    pub fn get_discount_type(&self) -> Option<DiscountType> {
+        return DiscountType::from_str(&self.discount_type).ok();
     }
 }
 

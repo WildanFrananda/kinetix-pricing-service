@@ -153,10 +153,10 @@ where
             let mut applied_flash_sale = None;
             let mut applied_discount = None;
 
-            if let Ok(Some(flash)) = self
+            if let Some(flash) = self
                 .flash_sale_repo
                 .find_active_for_product(pool, &item.product_id)
-                .await
+                .await?
             {
                 if applies_to_cart(flash.merchant_principal_id.as_deref(), cart_merchant)
                     && flash.flash_price < final_unit_price
@@ -207,55 +207,33 @@ where
         }
 
         let mut voucher_discount = dec!(0.00);
-        let mut shipping_discount = dec!(0.00);
         let mut applied_voucher = None;
         let base_shipping = self.base_shipping_for(pool, &req).await?;
 
         if let Some(code) = &req.voucher_code {
-            if let Ok(Some(voucher)) = self.voucher_repo.find_by_code(pool, code).await {
+            if let Some(voucher) = self.voucher_repo.find_by_code(pool, code).await? {
                 if applies_to_cart(voucher.merchant_principal_id.as_deref(), cart_merchant)
                     && self.voucher_evaluator.is_eligible(&voucher, subtotal)
                 {
-                    if voucher.discount_type == "SHIPPING" || voucher.code.contains("FREE_SHIP") {
-                        shipping_discount = base_shipping.min(
-                            self.voucher_evaluator
-                                .calculate_discount(&voucher, base_shipping),
-                        );
-                    } else {
-                        voucher_discount = self
-                            .voucher_evaluator
-                            .calculate_discount(&voucher, subtotal);
-                    }
+                    voucher_discount = self
+                        .voucher_evaluator
+                        .calculate_discount(&voucher, subtotal);
                     applied_voucher = Some(voucher.code.clone());
                 }
             }
         }
 
-        let mut payment_discount = dec!(0.00);
-        if let Some(method) = &req.payment_method {
-            if method.contains("INTERNAL_WALLET") || method.contains("WALLET") {
-                payment_discount = (subtotal * dec!(0.05)).min(dec!(25000.00));
-            }
-        }
-
-        let final_shipping_fee = (base_shipping - shipping_discount).max(dec!(0.00));
-        let final_total =
-            (subtotal - voucher_discount - payment_discount + final_shipping_fee).max(dec!(0.00));
+        let final_total = (subtotal - voucher_discount + base_shipping).max(dec!(0.00));
 
         return Ok(CalculatePriceResponse {
             subtotal,
-            total_discount: total_item_savings
-                + voucher_discount
-                + shipping_discount
-                + payment_discount,
+            total_discount: total_item_savings + voucher_discount,
             voucher_discount,
             final_total,
             applied_voucher,
             items: item_responses,
             base_shipping_fee: base_shipping,
-            shipping_discount,
-            final_shipping_fee,
-            payment_discount,
+            final_shipping_fee: base_shipping,
         });
     }
 }

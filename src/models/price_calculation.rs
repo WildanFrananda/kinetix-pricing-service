@@ -16,7 +16,6 @@ pub struct CalculatePriceRequest {
     pub items: Vec<PriceItemRequest>,
     pub voucher_code: Option<String>,
     pub base_shipping_fee: Option<Decimal>,
-    pub payment_method: Option<String>,
     pub shipping: Option<ShippingQuoteRequest>,
     pub merchant_principal_id: Option<String>,
 }
@@ -41,7 +40,5 @@ pub struct CalculatePriceResponse {
     pub applied_voucher: Option<String>,
     pub items: Vec<PriceItemResponse>,
     pub base_shipping_fee: Decimal,
-    pub shipping_discount: Decimal,
     pub final_shipping_fee: Decimal,
-    pub payment_discount: Decimal,
 }

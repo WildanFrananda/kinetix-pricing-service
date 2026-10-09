@@ -3,7 +3,6 @@ use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
 use rust_decimal::Decimal;
-use rust_decimal_macros::dec;
 
 use crate::models::{
     CalculatePriceRequest as DomainCalcReq, PriceItemRequest as DomainItemReq,
@@ -81,17 +80,23 @@ impl PricingGrpcTrait for PricingGrpcServer {
             items: domain_items,
             voucher_code: req.voucher_code,
             base_shipping_fee: deprecated_caller_fee,
-            payment_method: req.payment_method,
             merchant_principal_id: req
                 .merchant_principal_id
                 .filter(|merchant| return !merchant.trim().is_empty()),
-            shipping: req.shipping.map(|quote| {
-                return DomainShippingQuote {
-                    service_tier: quote.service_tier,
-                    distance_km: Decimal::try_from(quote.distance_km).unwrap_or(dec!(0.00)),
-                    total_weight_grams: quote.total_weight_grams,
-                };
-            }),
+            shipping: req
+                .shipping
+                .map(|quote| {
+                    return distance_of(&quote.service_tier, quote.distance_km).map(
+                        |distance_km| {
+                            return DomainShippingQuote {
+                                service_tier: quote.service_tier,
+                                distance_km,
+                                total_weight_grams: quote.total_weight_grams,
+                            };
+                        },
+                    );
+                })
+                .transpose()?,
         };
 
         let result = self
@@ -126,9 +131,9 @@ impl PricingGrpcTrait for PricingGrpcServer {
             applied_voucher: result.applied_voucher,
             items: pb_items,
             base_shipping_fee: Some(to_money(result.base_shipping_fee)),
-            shipping_discount: Some(to_money(result.shipping_discount)),
+            shipping_discount: Some(to_money(Decimal::ZERO)),
             final_shipping_fee: Some(to_money(result.final_shipping_fee)),
-            payment_discount: Some(to_money(result.payment_discount)),
+            payment_discount: Some(to_money(Decimal::ZERO)),
         }));
     }
 
@@ -142,13 +147,17 @@ impl PricingGrpcTrait for PricingGrpcServer {
             .journeys
             .into_iter()
             .map(|journey| {
-                return DomainShippingQuote {
-                    service_tier: journey.service_tier,
-                    distance_km: Decimal::try_from(journey.distance_km).unwrap_or(dec!(0.00)),
-                    total_weight_grams: journey.total_weight_grams,
-                };
+                return distance_of(&journey.service_tier, journey.distance_km).map(
+                    |distance_km| {
+                        return DomainShippingQuote {
+                            service_tier: journey.service_tier,
+                            distance_km,
+                            total_weight_grams: journey.total_weight_grams,
+                        };
+                    },
+                );
             })
-            .collect();
+            .collect::<Result<Vec<_>, Status>>()?;
 
         let quotes = self
             .pricing_service
@@ -387,6 +396,17 @@ impl PricingGrpcTrait for PricingGrpcServer {
             }
         }));
     }
+}
+
+fn distance_of(service_tier: &str, distance_km: f64) -> Result<Decimal, Status> {
+    return Decimal::try_from(distance_km)
+        .ok()
+        .filter(|km| return *km >= Decimal::ZERO)
+        .ok_or_else(|| {
+            return Status::invalid_argument(format!(
+                "the {service_tier} journey has no usable distance: {distance_km} km"
+            ));
+        });
 }
 
 fn error_detail(code: &str, message: &str) -> ErrorDetail {

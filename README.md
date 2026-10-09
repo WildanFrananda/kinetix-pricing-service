@@ -23,7 +23,7 @@ High-performance microservice written in **Rust 1.98 (Rocket 0.5 & Tonic gRPC & 
 
 1. **Pricing Calculation Engine (gRPC :50054)**: Calculates line-item totals and cart subtotals by prioritizing active Flash Sales (#1), Category/Product Discounts (#2), and Voucher redemptions (#3).
 2. **Discounts Engine**: Percentage & fixed value discounts targetable by product ID, category ID, or global catalog.
-3. **Vouchers Engine**: Code-based claims with minimum spend threshold, maximum discount limit, usage quotas, and expiry guards.
+3. **Vouchers Engine**: Code-based claims with minimum spend threshold, maximum discount limit, usage quotas, and expiry guards. A voucher discounts the goods only: the shipping fee is the courier's, and no voucher reduces it. A voucher or discount of a kind other than `PERCENTAGE` or `FIXED` applies nothing, and a promotion that cannot be read fails the calculation instead of being skipped.
 4. **Flash Sales Engine**: Time-windowed flash sale prices with atomic stock allocation limits.
 5. **Trait-Based Dependency Injection**: Decoupled repository ports (`DiscountRepositoryPort`, `VoucherRepositoryPort`, `FlashSaleRepositoryPort`) and strategy evaluators (`DiscountEvaluator`, `VoucherEvaluator`).
 6. **Zero Hardcoded Secrets & Fail-Fast**: Mandatory startup validation requiring `DATABASE_URL`, `IDENTITY_GRPC_URL` and `CATALOG_GRPC_URL`.
