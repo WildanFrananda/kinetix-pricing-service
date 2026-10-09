@@ -15,6 +15,7 @@ impl VoucherEvaluator for DefaultVoucherEvaluator {
     fn is_eligible(&self, voucher: &Voucher, subtotal: Decimal) -> bool {
         let now = Utc::now();
         let is_valid = voucher.active
+            && voucher.get_discount_type().is_some()
             && voucher.expires_at >= now
             && voucher.used_count < voucher.quota
             && subtotal >= voucher.min_spend;
@@ -27,8 +28,9 @@ impl VoucherEvaluator for DefaultVoucherEvaluator {
         }
 
         let raw_discount = match voucher.get_discount_type() {
-            DiscountType::Percentage => subtotal * (voucher.value / dec!(100.00)),
-            DiscountType::Fixed => voucher.value,
+            Some(DiscountType::Percentage) => subtotal * (voucher.value / dec!(100.00)),
+            Some(DiscountType::Fixed) => voucher.value,
+            None => return dec!(0.00),
         };
 
         let bounded_discount = if let Some(max_d) = voucher.max_discount {
