@@ -2,15 +2,18 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use chrono::{Duration, Utc};
+use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use uuid::Uuid;
 
 use kinetix_pricing_service::clients::{
     MerchantDirectoryPort, MerchantStanding, PeerUnavailable, ProductDirectoryPort,
 };
 use kinetix_pricing_service::error::AppError;
-use kinetix_pricing_service::models::DiscountType;
-use kinetix_pricing_service::services::{validate_percentage, PromotionService};
-use kinetix_pricing_service::traits::applies_to_cart;
+use kinetix_pricing_service::models::{DiscountType, Voucher};
+use kinetix_pricing_service::services::{previewed, validate_percentage, PromotionService};
+use kinetix_pricing_service::traits::{applies_to_cart, DefaultVoucherEvaluator};
 
 const SELLER: &str = "principal-of-the-seller";
 const MERCHANT: &str = "merchant-principal-identity-names";
@@ -181,4 +184,64 @@ fn a_promotion_reaches_a_cart_only_when_it_is_the_platforms_or_the_carts_own() {
     assert!(applies_to_cart(Some(MERCHANT), Some(MERCHANT)));
     assert!(!applies_to_cart(Some(MERCHANT), Some("someone-else")));
     assert!(!applies_to_cart(Some(MERCHANT), None));
+}
+
+fn voucher_owned_by(owner: Option<&str>, min_spend: Decimal) -> Voucher {
+    let now = Utc::now();
+    return Voucher {
+        id: Uuid::new_v4(),
+        code: "SHOP10".to_string(),
+        title: "preview".to_string(),
+        discount_type: "PERCENTAGE".to_string(),
+        value: dec!(10),
+        min_spend,
+        max_discount: None,
+        quota: 10,
+        used_count: 0,
+        active: true,
+        expires_at: now + Duration::days(1),
+        created_at: now,
+        updated_at: now,
+        merchant_principal_id: owner.map(|m| return m.to_string()),
+    };
+}
+
+#[test]
+fn a_platform_voucher_previews_for_any_cart() {
+    for cart in [None, Some(MERCHANT)] {
+        let shown = previewed(
+            voucher_owned_by(None, dec!(0)),
+            &DefaultVoucherEvaluator,
+            dec!(100000),
+            cart,
+        );
+        assert!(shown.is_some(), "cart {cart:?}");
+    }
+}
+
+#[test]
+fn a_sellers_voucher_previews_only_for_that_merchants_cart() {
+    let preview = |cart: Option<&str>| {
+        return previewed(
+            voucher_owned_by(Some(MERCHANT), dec!(0)),
+            &DefaultVoucherEvaluator,
+            dec!(100000),
+            cart,
+        );
+    };
+
+    assert!(preview(Some(MERCHANT)).is_some());
+    assert!(preview(Some("another-merchant")).is_none());
+    assert!(preview(None).is_none());
+}
+
+#[test]
+fn a_voucher_below_its_minimum_spend_previews_as_nothing_even_for_its_merchant() {
+    let shown = previewed(
+        voucher_owned_by(Some(MERCHANT), dec!(500000)),
+        &DefaultVoucherEvaluator,
+        dec!(100000),
+        Some(MERCHANT),
+    );
+    assert!(shown.is_none());
 }

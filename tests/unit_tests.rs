@@ -21,9 +21,10 @@ mod tests {
 
     #[test]
     fn test_apply_voucher_request() {
-        let req = ApplyVoucherRequest::new("PROMO50".to_string(), dec!(150000.0));
+        let req = ApplyVoucherRequest::new("PROMO50".to_string(), dec!(150000.0), None);
         assert_eq!(req.code, "PROMO50");
         assert_eq!(req.cart_subtotal, dec!(150000.0));
+        assert_eq!(req.merchant_principal_id, None);
     }
 
     #[test]

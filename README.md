@@ -10,6 +10,7 @@ High-performance microservice written in **Rust 1.98 (Rocket 0.5 & Tonic gRPC & 
   - Admin/Merchant promo management endpoints (`POST /api/v1/discounts`, `POST /api/v1/vouchers`, `POST /api/v1/vouchers/apply`, `POST /api/v1/flash-sales`, `GET /health`).
   - `GET /metrics`: Prometheus text exposition, unauthenticated, named to the estate's contract (`kinetix_http_requests_total`, `kinetix_http_request_duration_seconds`, `kinetix_grpc_server_calls_total`, `kinetix_build_info`). Route labels are the matched template, never the path.
   - Callers present an identity access token, verified locally against identity's JWKS. An `admin` creates platform promotions, which apply to every cart. A `seller`'s promotion is filed under its merchant — identity `GetMerchantInfo` names it, and only while it `may_sell` — and applies only to carts from that merchant. A seller's flash sale or product discount must name a product catalog (`GetProduct`) says the seller owns. If identity or catalog cannot be asked, the promotion is refused with `503`, never filed.
+  - Reading promotions takes no token. The voucher preview, `POST /api/v1/vouchers/apply`, takes the cart's `merchant_principal_id` beside the code and subtotal, and answers as checkout would: a seller's voucher is shown only for that merchant's cart.
 - **Port `:50054` (gRPC Protobuf)**:
   - High-performance inter-service price calculation server (`PricingService` RPC `CalculatePrice`).
   - Used directly by backend microservices like `kinetix-catalog-service` over Protobuf / HTTP/2.

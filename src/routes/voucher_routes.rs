@@ -5,8 +5,8 @@ use crate::error::AppError;
 use crate::guards::AdminOrMerchantGuard;
 use crate::models::{ApplyVoucherRequest, CreateVoucherRequest, Voucher};
 use crate::repositories::{VoucherRepository, VoucherRepositoryPort};
-use crate::services::{validate_percentage, PromotionService};
-use crate::traits::{DefaultVoucherEvaluator, VoucherEvaluator};
+use crate::services::{previewed, validate_percentage, PromotionService};
+use crate::traits::DefaultVoucherEvaluator;
 use crate::DbPool;
 
 #[post("/api/v1/vouchers", data = "<req>")]
@@ -45,7 +45,11 @@ pub async fn apply_voucher(
     req: Json<ApplyVoucherRequest>,
 ) -> Result<Json<Option<Voucher>>, AppError> {
     let payload = req.into_inner();
-    let query_req = ApplyVoucherRequest::new(payload.code, payload.cart_subtotal);
+    let query_req = ApplyVoucherRequest::new(
+        payload.code,
+        payload.cart_subtotal,
+        payload.merchant_principal_id,
+    );
 
     if query_req.code.trim().is_empty() {
         return Err(AppError::BadRequest(
@@ -56,14 +60,14 @@ pub async fn apply_voucher(
     let repo = VoucherRepository;
     let voucher_opt = repo.find_by_code(pool.inner(), &query_req.code).await?;
 
-    if let Some(ref voucher) = voucher_opt {
-        let evaluator = DefaultVoucherEvaluator;
-        if !evaluator.is_eligible(voucher, query_req.cart_subtotal) {
-            return Ok(Json(None));
-        }
-    }
-
-    return Ok(Json(voucher_opt));
+    return Ok(Json(voucher_opt.and_then(|voucher| {
+        return previewed(
+            voucher,
+            &DefaultVoucherEvaluator,
+            query_req.cart_subtotal,
+            query_req.merchant_principal_id.as_deref(),
+        );
+    })));
 }
 
 #[get("/api/v1/vouchers/<code>")]
