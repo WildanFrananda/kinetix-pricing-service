@@ -30,6 +30,14 @@ impl JwksBreaker {
         }
     }
 
+    pub fn succeeded_within(&self, window: Duration) -> bool {
+        let last_success = *lock(&self.last_success);
+        match last_success {
+            Some(at) => return at.elapsed() < window,
+            None => return false,
+        }
+    }
+
     pub fn record_success(&self) {
         *lock(&self.last_success) = Some(Instant::now());
         *lock(&self.open_until) = None;
