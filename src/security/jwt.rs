@@ -9,6 +9,7 @@ use tokio::sync::Mutex;
 use crate::security::jwks_breaker::JwksBreaker;
 
 const JWKS_COOLDOWN: Duration = Duration::from_secs(15);
+pub const UNKNOWN_KEY_REFRESH: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct AccessClaims {
@@ -163,7 +164,7 @@ impl JwtVerifier {
         let kid = header.kid.ok_or(JwtError::Invalid)?;
 
         let mut key = self.lookup(&kid)?;
-        if key.is_none() {
+        if key.is_none() && !self.breaker.succeeded_within(UNKNOWN_KEY_REFRESH) {
             self.refresh().await.map_err(JwtError::Unavailable)?;
             key = self.lookup(&kid)?;
         }

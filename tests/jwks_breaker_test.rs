@@ -58,3 +58,29 @@ fn only_a_success_that_lands_after_the_mark_serves_a_queued_caller() {
 
     assert!(breaker.refreshed_since(queued_at));
 }
+
+#[test]
+fn a_breaker_that_never_fetched_has_no_recent_success() {
+    let breaker = JwksBreaker::new(Duration::from_secs(15));
+
+    assert!(!breaker.succeeded_within(Duration::from_secs(10)));
+}
+
+#[test]
+fn a_success_is_recent_only_within_its_window() {
+    let breaker = JwksBreaker::new(Duration::from_secs(15));
+
+    breaker.record_success();
+
+    assert!(breaker.succeeded_within(Duration::from_secs(10)));
+    assert!(!breaker.succeeded_within(Duration::ZERO));
+}
+
+#[test]
+fn a_failure_is_not_a_success() {
+    let breaker = JwksBreaker::new(Duration::from_secs(15));
+
+    breaker.record_failure();
+
+    assert!(!breaker.succeeded_within(Duration::from_secs(10)));
+}
