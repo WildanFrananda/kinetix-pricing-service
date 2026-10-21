@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use uuid::Uuid;
 
-use crate::models::discount::DiscountType;
+use crate::models::discount_type::DiscountType;
 use crate::schema::vouchers;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Queryable, Selectable, Insertable)]
@@ -32,39 +32,5 @@ pub struct Voucher {
 impl Voucher {
     pub fn get_discount_type(&self) -> Option<DiscountType> {
         return DiscountType::from_str(&self.discount_type).ok();
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateVoucherRequest {
-    pub code: String,
-    pub title: String,
-    pub discount_type: DiscountType,
-    pub value: Decimal,
-    pub min_spend: Decimal,
-    pub max_discount: Option<Decimal>,
-    pub quota: i32,
-    pub expires_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ApplyVoucherRequest {
-    pub code: String,
-    pub cart_subtotal: Decimal,
-    #[serde(default)]
-    pub merchant_principal_id: Option<String>,
-}
-
-impl ApplyVoucherRequest {
-    pub fn new(
-        code: String,
-        cart_subtotal: Decimal,
-        merchant_principal_id: Option<String>,
-    ) -> Self {
-        return Self {
-            code,
-            cart_subtotal,
-            merchant_principal_id,
-        };
     }
 }

@@ -119,17 +119,18 @@ fn a_database_error_reaches_the_caller_as_a_sentence_and_not_as_diesel() {
 }
 
 #[test]
-fn a_pool_error_never_names_the_host_it_could_not_reach() {
+fn a_pool_error_is_503_and_never_names_the_host_it_could_not_reach() {
     let client = client();
     let response = client
         .get("/boom/pool")
         .header(Header::new("X-Request-Id", ID))
         .dispatch();
 
-    assert_eq!(response.status(), Status::InternalServerError);
+    assert_eq!(response.status(), Status::ServiceUnavailable);
 
     let body = body_of(response);
     assert_eq!(body["traceId"], ID);
+    assert_eq!(body["error"], "DATABASE_UNAVAILABLE");
 
     let message = body["message"].as_str().expect("no message in the body");
     assert!(
@@ -184,7 +185,7 @@ fn the_default_catcher_answers_a_status_no_other_catcher_claims() {
     assert_eq!(response.status(), Status::NotFound);
 
     let body = body_of(response);
-    assert_eq!(body["error"], "Not Found");
+    assert_eq!(body["error"], "NOT_FOUND");
     assert_eq!(body["traceId"], ID);
 }
 
@@ -199,4 +200,53 @@ fn error_response_reads_the_id_off_the_request_it_was_built_for() {
     assert_eq!(body_of(response)["traceId"], "lowercase-header-still-works");
 
     let _ = std::mem::size_of::<ErrorResponse>();
+}
+
+#[test]
+fn every_error_names_its_code_in_the_same_vocabulary_as_the_catchers() {
+    let client = client();
+    let cases = [
+        (
+            "/boom/database",
+            Status::InternalServerError,
+            "INTERNAL_ERROR",
+        ),
+        (
+            "/boom/pool",
+            Status::ServiceUnavailable,
+            "DATABASE_UNAVAILABLE",
+        ),
+        ("/boom/missing", Status::NotFound, "NOT_FOUND"),
+        ("/boom/unauthorized", Status::Unauthorized, "UNAUTHORIZED"),
+        ("/no/such/endpoint", Status::NotFound, "NOT_FOUND"),
+    ];
+
+    for (path, status, code) in cases {
+        let response = client.get(path).dispatch();
+        assert_eq!(response.status(), status, "{path}");
+        assert_eq!(body_of(response)["error"], code, "{path}");
+    }
+}
+
+#[test]
+fn each_app_error_has_one_code() {
+    let cases = [
+        (AppError::Database(Error::NotFound), "INTERNAL_ERROR"),
+        (AppError::Internal("x".to_string()), "INTERNAL_ERROR"),
+        (AppError::Pool("x".to_string()), "DATABASE_UNAVAILABLE"),
+        (AppError::NotFound("x".to_string()), "NOT_FOUND"),
+        (AppError::BadRequest("x".to_string()), "INVALID_REQUEST"),
+        (AppError::Unauthorized, "UNAUTHORIZED"),
+        (AppError::Forbidden("x".to_string()), "FORBIDDEN"),
+        (AppError::Conflict("x".to_string()), "CONFLICT"),
+        (AppError::Unprocessable("x".to_string()), "UNPROCESSABLE"),
+        (
+            AppError::Unavailable("x".to_string()),
+            "UPSTREAM_UNAVAILABLE",
+        ),
+    ];
+
+    for (error, code) in cases {
+        assert_eq!(error.code(), code, "{error}");
+    }
 }

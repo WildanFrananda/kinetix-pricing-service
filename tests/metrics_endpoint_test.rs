@@ -1,15 +1,20 @@
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use rocket::http::Status;
 use rocket::local::blocking::Client;
 use rocket::{get, routes};
 
+use kinetix_pricing_service::clients::{
+    MerchantDirectoryPort, MerchantStanding, PeerError, ProductDirectoryPort,
+};
 use kinetix_pricing_service::db::create_pool;
 use kinetix_pricing_service::observability::{Metrics, MetricsFairing};
 use kinetix_pricing_service::routes::{
     flash_sale_routes::get_flash_sale_for_product, health_routes::health_check,
     metrics_routes::metrics as metrics_endpoint, voucher_routes::get_voucher,
 };
+use kinetix_pricing_service::services::PromotionService;
 use kinetix_pricing_service::DbPool;
 
 use crate::identifier_shapes::looks_like_an_identifier;
@@ -25,6 +30,30 @@ fn unconnected_pool() -> DbPool {
     return create_pool("postgres://unused:unused@127.0.0.1:1/unused");
 }
 
+struct NoMerchants;
+struct NoProducts;
+
+#[async_trait]
+impl MerchantDirectoryPort for NoMerchants {
+    async fn standing_of(
+        &self,
+        _principal_id: &str,
+    ) -> Result<Option<MerchantStanding>, PeerError> {
+        return Err(PeerError::Unavailable(
+            "not used by these tests".to_string(),
+        ));
+    }
+}
+
+#[async_trait]
+impl ProductDirectoryPort for NoProducts {
+    async fn owner_of(&self, _sku: &str) -> Result<Option<String>, PeerError> {
+        return Err(PeerError::Unavailable(
+            "not used by these tests".to_string(),
+        ));
+    }
+}
+
 fn client() -> Client {
     let metrics = Arc::new(
         Metrics::new("kinetix-pricing-service", "0.1.0").expect("the metric registry was refused"),
@@ -33,6 +62,10 @@ fn client() -> Client {
     let rocket = rocket::build()
         .attach(MetricsFairing::new(metrics.clone()))
         .manage(unconnected_pool())
+        .manage(PromotionService::new(
+            Arc::new(NoMerchants),
+            Arc::new(NoProducts),
+        ))
         .manage(metrics)
         .mount(
             "/",

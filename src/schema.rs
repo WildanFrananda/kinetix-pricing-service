@@ -90,6 +90,17 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    promotion_creations (principal_id, idempotency_key) {
+        principal_id -> Text,
+        idempotency_key -> VarChar,
+        promotion_kind -> VarChar,
+        promotion_id -> Uuid,
+        request_body -> Text,
+        created_at -> Timestamptz,
+    }
+}
+
 diesel::allow_tables_to_appear_in_same_query!(
     discounts,
     vouchers,
@@ -97,4 +108,5 @@ diesel::allow_tables_to_appear_in_same_query!(
     voucher_redemptions,
     flash_sale_allocations,
     shipping_rates,
+    promotion_creations,
 );

@@ -4,8 +4,9 @@ use rust_decimal_macros::dec;
 use crate::error::AppError;
 use crate::models::{
     CalculatePriceRequest, CalculatePriceResponse, PriceItemResponse, QuotedShipping,
-    ShippingQuoteRequest,
+    ShippingQuoteRequest, ShippingRate,
 };
+use crate::money::to_money;
 use crate::repositories::{
     DiscountRepository, DiscountRepositoryPort, FlashSaleRepository, FlashSaleRepositoryPort,
     ShippingRateRepository, ShippingRateRepositoryPort, VoucherRepository, VoucherRepositoryPort,
@@ -90,7 +91,7 @@ where
                 .await?;
 
             let (base_shipping_fee, priced) = match rate {
-                Some(rate) => (rate.fee_for(&journey), true),
+                Some(rate) => (priced_fee(&rate, &journey)?, true),
                 None => (dec!(0.00), false),
             };
 
@@ -119,7 +120,7 @@ where
             .await?;
 
         return match rate {
-            Some(rate) => Ok(rate.fee_for(quote)),
+            Some(rate) => priced_fee(&rate, quote),
             None => Err(AppError::BadRequest(format!(
                 "no shipping rate for tier '{}', so this delivery cannot be priced here; \
                  pricing refuses rather than charging nothing for a journey that will be made",
@@ -155,10 +156,11 @@ where
 
             if let Some(flash) = self
                 .flash_sale_repo
-                .find_active_for_product(pool, &item.product_id)
+                .find_active_for_cart(pool, &item.product_id, item.quantity, cart_merchant)
                 .await?
             {
                 if applies_to_cart(flash.merchant_principal_id.as_deref(), cart_merchant)
+                    && flash.flash_price >= dec!(0.00)
                     && flash.flash_price < final_unit_price
                 {
                     final_unit_price = flash.flash_price;
@@ -215,10 +217,16 @@ where
                 if applies_to_cart(voucher.merchant_principal_id.as_deref(), cart_merchant)
                     && self.voucher_evaluator.is_eligible(&voucher, subtotal)
                 {
-                    voucher_discount = self
+                    let discount = self
                         .voucher_evaluator
-                        .calculate_discount(&voucher, subtotal);
-                    applied_voucher = Some(voucher.code.clone());
+                        .calculate_discount(&voucher, subtotal)
+                        .max(dec!(0.00))
+                        .min(subtotal);
+
+                    if discount > dec!(0.00) {
+                        voucher_discount = discount;
+                        applied_voucher = Some(voucher.code.clone());
+                    }
                 }
             }
         }
@@ -236,4 +244,16 @@ where
             final_shipping_fee: base_shipping,
         });
     }
+}
+
+fn priced_fee(rate: &ShippingRate, journey: &ShippingQuoteRequest) -> Result<Decimal, AppError> {
+    return rate
+        .fee_for(journey)
+        .filter(|fee| return to_money(*fee).is_some())
+        .ok_or_else(|| {
+            return AppError::BadRequest(format!(
+                "the {} journey is too long or too heavy to price",
+                journey.service_tier
+            ));
+        });
 }

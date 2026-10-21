@@ -4,7 +4,7 @@ use diesel_async::RunQueryDsl;
 
 use crate::error::AppError;
 use crate::models::ShippingRate;
-use crate::repositories::traits::ShippingRateRepositoryPort;
+use crate::repositories::ShippingRateRepositoryPort;
 use crate::schema::shipping_rates::dsl::*;
 use crate::DbPool;
 

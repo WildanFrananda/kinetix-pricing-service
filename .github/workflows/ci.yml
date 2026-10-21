@@ -2,10 +2,9 @@ name: CI
 
 # pricing had no CI at all until now. (kinetix-infrastructure/docs/STAGING-DEPLOYMENT-PLAN.md §5, item 6)
 #
-# No database service: the suite drives the domain through fakes (tests/pricing_api_test.rs), and
-# DATABASE_URL is read only by the binary at startup, never by a test. Add a Postgres service here the
-# day a test needs a real connection — and not before, because a service nothing uses still has to be
-# waited for on every run.
+# tests/postgres_repository_test.rs needs a real database: a unique code, the idempotency ledger and the
+# flash-sale lookup are decided by Postgres, not by the fakes. It migrates the database named by
+# KINETIX_TEST_POSTGRES and fails when CI is set and that variable is not.
 
 on:
   pull_request:
@@ -15,6 +14,22 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci-ephemeral-not-a-deployed-credential
+          POSTGRES_DB: kinetix_pricing_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd="pg_isready -U ci"
+          --health-interval=10s --health-timeout=5s --health-retries=5
+
+    env:
+      KINETIX_TEST_POSTGRES: "postgres://ci:ci-ephemeral-not-a-deployed-credential@localhost:5432/kinetix_pricing_test"
+
     steps:
       - uses: actions/checkout@v6
 

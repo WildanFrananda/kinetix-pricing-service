@@ -8,13 +8,16 @@ pub const CURRENCY: &str = "IDR";
 
 const MINOR_PER_MAJOR: i64 = 100;
 
-pub fn to_money(amount: Decimal) -> Money {
-    let minor = (amount * Decimal::from(MINOR_PER_MAJOR)).round();
+pub fn to_money(amount: Decimal) -> Option<Money> {
+    let minor = amount
+        .checked_mul(Decimal::from(MINOR_PER_MAJOR))?
+        .round()
+        .to_i64()?;
 
-    Money {
-        amount_minor: minor.to_i64().unwrap_or(0),
+    return Some(Money {
+        amount_minor: minor,
         currency: CURRENCY.to_string(),
-    }
+    });
 }
 
 pub fn from_money(money: &Money) -> Result<Decimal, Status> {

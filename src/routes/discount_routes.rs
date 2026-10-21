@@ -1,33 +1,25 @@
+use chrono::Utc;
 use rocket::serde::json::Json;
 use rocket::{get, post, State};
 
 use crate::error::AppError;
-use crate::guards::AdminOrMerchantGuard;
-use crate::models::{CreateDiscountRequest, Discount};
+use crate::guards::{AdminOrMerchantGuard, IdempotencyKey, JsonBody};
+use crate::models::{CreateDiscountRequest, Discount, IdempotentCreation};
 use crate::repositories::{DiscountRepository, DiscountRepositoryPort};
-use crate::services::{validate_percentage, PromotionService};
+use crate::routes::CreatedResponse;
+use crate::services::{check_discount, PromotionService};
 use crate::DbPool;
 
 #[post("/api/v1/discounts", data = "<req>")]
 pub async fn create_discount(
     auth: AdminOrMerchantGuard,
+    key: IdempotencyKey,
     pool: &State<DbPool>,
     promotions: &State<PromotionService>,
-    req: Json<CreateDiscountRequest>,
-) -> Result<Json<Discount>, AppError> {
+    req: JsonBody<CreateDiscountRequest>,
+) -> Result<CreatedResponse<Json<Discount>>, AppError> {
     let payload = req.into_inner();
-    if payload.value <= rust_decimal_macros::dec!(0.0) {
-        return Err(AppError::BadRequest(
-            "Discount value must be greater than zero".to_string(),
-        ));
-    }
-    if payload.start_time >= payload.end_time {
-        return Err(AppError::BadRequest(
-            "Discount start_time must be before end_time".to_string(),
-        ));
-    }
-
-    validate_percentage(&payload.discount_type, payload.value)?;
+    check_discount(&payload, Utc::now())?;
 
     let owner = promotions
         .owner_for(
@@ -37,9 +29,15 @@ pub async fn create_discount(
         )
         .await?;
 
-    let repo = DiscountRepository;
-    let discount = repo.create(pool.inner(), payload, owner).await?;
-    return Ok(Json(discount));
+    let creation = IdempotentCreation {
+        principal_id: auth.principal_id,
+        idempotency_key: key.0,
+    };
+    let outcome = DiscountRepository
+        .create(pool.inner(), payload, owner, creation)
+        .await?;
+
+    return Ok(CreatedResponse::new(Json(outcome.record), outcome.replayed));
 }
 
 #[get("/api/v1/discounts")]
