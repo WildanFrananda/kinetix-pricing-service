@@ -2,9 +2,11 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use tonic::transport::Channel;
-use tonic::Request;
+use tonic::{Code, Request};
 
-use super::ports::{MerchantDirectoryPort, MerchantStanding, PeerUnavailable};
+use super::merchant_directory_port::MerchantDirectoryPort;
+use super::merchant_standing::MerchantStanding;
+use super::peer_error::PeerError;
 use crate::proto::identity::v1::identity_service_client::IdentityServiceClient;
 use crate::proto::identity::v1::GetMerchantInfoRequest;
 
@@ -24,27 +26,23 @@ impl IdentityMerchantDirectory {
 
 #[async_trait]
 impl MerchantDirectoryPort for IdentityMerchantDirectory {
-    async fn standing_of(
-        &self,
-        principal_id: &str,
-    ) -> Result<Option<MerchantStanding>, PeerUnavailable> {
+    async fn standing_of(&self, principal_id: &str) -> Result<Option<MerchantStanding>, PeerError> {
         let mut request = Request::new(GetMerchantInfoRequest {
             principal_id: principal_id.to_string(),
         });
         request.set_timeout(DEADLINE);
 
-        let response = self
-            .client
-            .clone()
-            .get_merchant_info(request)
-            .await
-            .map_err(|status| {
-                return PeerUnavailable(format!(
-                    "identity did not answer GetMerchantInfo: {}",
-                    status.message()
+        let response = match self.client.clone().get_merchant_info(request).await {
+            Ok(response) => response.into_inner(),
+            Err(status) if status.code() == Code::NotFound => return Ok(None),
+            Err(status) => {
+                return Err(PeerError::from_status(
+                    "identity",
+                    "GetMerchantInfo",
+                    &status,
                 ));
-            })?
-            .into_inner();
+            }
+        };
 
         if !response.found {
             return Ok(None);

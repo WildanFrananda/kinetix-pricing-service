@@ -1,14 +1,21 @@
 use async_trait::async_trait;
 use chrono::Utc;
 use diesel::prelude::*;
-use diesel_async::RunQueryDsl;
+use diesel::result::{DatabaseErrorKind, Error as DieselError};
+use diesel_async::scoped_futures::ScopedFutureExt;
+use diesel_async::{AsyncConnection, RunQueryDsl};
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::models::{CreateVoucherRequest, Voucher};
-use crate::repositories::traits::VoucherRepositoryPort;
+use crate::models::{
+    normalized_voucher_code, CreateOutcome, CreateVoucherRequest, IdempotentCreation,
+    PromotionKind, Voucher,
+};
+use crate::repositories::{CreationClaim, PromotionCreationLedger, VoucherRepositoryPort};
 use crate::schema::vouchers::dsl::*;
 use crate::DbPool;
+
+const UNIQUE_CODE_CONSTRAINTS: [&str; 2] = ["vouchers_code_key", "vouchers_code_upper_key"];
 
 pub struct VoucherRepository;
 
@@ -21,11 +28,13 @@ impl VoucherRepositoryPort for VoucherRepository {
     ) -> Result<Option<Voucher>, AppError> {
         let mut conn = pool.get().await?;
         let now = Utc::now();
+        let wanted = normalized_voucher_code(search_code);
 
         let record = vouchers
-            .filter(code.eq(search_code))
+            .filter(code.eq(&wanted))
             .filter(active.eq(true))
             .filter(expires_at.gt(now))
+            .filter(used_count.lt(quota))
             .select(Voucher::as_select())
             .first(&mut conn)
             .await
@@ -39,33 +48,86 @@ impl VoucherRepositoryPort for VoucherRepository {
         pool: &DbPool,
         req: CreateVoucherRequest,
         owner: Option<String>,
-    ) -> Result<Voucher, AppError> {
+        creation: IdempotentCreation,
+    ) -> Result<CreateOutcome<Voucher>, AppError> {
+        let mut req = req;
+        req.code = normalized_voucher_code(&req.code);
+        let request_body = PromotionCreationLedger::fingerprint(&req)?;
         let mut conn = pool.get().await?;
-        let new_id = Uuid::new_v4();
-        let now = Utc::now();
 
-        let new_voucher = Voucher {
-            id: new_id,
-            code: req.code,
-            title: req.title,
-            discount_type: req.discount_type.as_str().to_string(),
-            value: req.value,
-            min_spend: req.min_spend,
-            max_discount: req.max_discount,
-            quota: req.quota,
-            used_count: 0,
-            active: true,
-            expires_at: req.expires_at,
-            created_at: now,
-            updated_at: now,
-            merchant_principal_id: owner,
-        };
+        return conn
+            .transaction::<_, AppError, _>(|conn| {
+                async move {
+                    let new_id = Uuid::new_v4();
+                    let claim = PromotionCreationLedger::claim(
+                        conn,
+                        &creation,
+                        PromotionKind::Voucher,
+                        new_id,
+                        &request_body,
+                    )
+                    .await?;
 
-        let record = diesel::insert_into(vouchers)
-            .values(&new_voucher)
-            .get_result::<Voucher>(&mut conn)
-            .await?;
+                    if let CreationClaim::Replay(earlier_id) = claim {
+                        let record = vouchers
+                            .filter(id.eq(earlier_id))
+                            .select(Voucher::as_select())
+                            .first(conn)
+                            .await?;
+                        return Ok(CreateOutcome {
+                            record,
+                            replayed: true,
+                        });
+                    }
 
-        return Ok(record);
+                    let now = Utc::now();
+                    let requested_code = req.code.clone();
+                    let new_voucher = Voucher {
+                        id: new_id,
+                        code: req.code,
+                        title: req.title,
+                        discount_type: req.discount_type.as_str().to_string(),
+                        value: req.value,
+                        min_spend: req.min_spend,
+                        max_discount: req.max_discount,
+                        quota: req.quota,
+                        used_count: 0,
+                        active: true,
+                        expires_at: req.expires_at,
+                        created_at: now,
+                        updated_at: now,
+                        merchant_principal_id: owner,
+                    };
+
+                    let record = diesel::insert_into(vouchers)
+                        .values(&new_voucher)
+                        .get_result::<Voucher>(conn)
+                        .await
+                        .map_err(|error| return code_taken(error, &requested_code))?;
+
+                    return Ok(CreateOutcome {
+                        record,
+                        replayed: false,
+                    });
+                }
+                .scope_boxed()
+            })
+            .await;
     }
+}
+
+fn code_taken(error: DieselError, requested_code: &str) -> AppError {
+    if let DieselError::DatabaseError(DatabaseErrorKind::UniqueViolation, info) = &error {
+        if info
+            .constraint_name()
+            .is_some_and(|name| return UNIQUE_CODE_CONSTRAINTS.contains(&name))
+        {
+            return AppError::Conflict(format!(
+                "a voucher with the code '{requested_code}' already exists; voucher codes are \
+                 unique across every merchant"
+            ));
+        }
+    }
+
+    return AppError::Database(error);
 }

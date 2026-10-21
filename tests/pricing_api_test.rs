@@ -7,8 +7,9 @@ use uuid::Uuid;
 use kinetix_pricing_service::db::create_pool;
 use kinetix_pricing_service::error::AppError;
 use kinetix_pricing_service::models::{
-    CalculatePriceRequest, CreateDiscountRequest, CreateFlashSaleRequest, CreateVoucherRequest,
-    Discount, FlashSale, PriceItemRequest, ShippingQuoteRequest, ShippingRate, Voucher,
+    CalculatePriceRequest, CreateDiscountRequest, CreateFlashSaleRequest, CreateOutcome,
+    CreateVoucherRequest, Discount, FlashSale, IdempotentCreation, PriceItemRequest,
+    ShippingQuoteRequest, ShippingRate, Voucher,
 };
 use kinetix_pricing_service::repositories::{
     DiscountRepositoryPort, FlashSaleRepositoryPort, ShippingRateRepositoryPort,
@@ -189,7 +190,8 @@ impl VoucherRepositoryPort for FailingVouchers {
         _pool: &DbPool,
         _req: CreateVoucherRequest,
         _owner: Option<String>,
-    ) -> Result<Voucher, AppError> {
+        _creation: IdempotentCreation,
+    ) -> Result<CreateOutcome<Voucher>, AppError> {
         unimplemented!("not used by these tests");
     }
 }
@@ -200,6 +202,19 @@ impl FlashSaleRepositoryPort for FailingFlashSales {
         &self,
         _pool: &DbPool,
         _product_id: &str,
+        _units: i32,
+    ) -> Result<Option<FlashSale>, AppError> {
+        return Err(AppError::Unavailable(
+            "the flash sale table did not answer".to_string(),
+        ));
+    }
+
+    async fn find_active_for_cart(
+        &self,
+        _pool: &DbPool,
+        _product_id: &str,
+        _units: i32,
+        _cart_merchant: Option<&str>,
     ) -> Result<Option<FlashSale>, AppError> {
         return Err(AppError::Unavailable(
             "the flash sale table did not answer".to_string(),
@@ -210,7 +225,8 @@ impl FlashSaleRepositoryPort for FailingFlashSales {
         _pool: &DbPool,
         _req: CreateFlashSaleRequest,
         _owner: Option<String>,
-    ) -> Result<FlashSale, AppError> {
+        _creation: IdempotentCreation,
+    ) -> Result<CreateOutcome<FlashSale>, AppError> {
         unimplemented!("not used by these tests");
     }
 }
@@ -229,7 +245,8 @@ impl DiscountRepositoryPort for FakeDiscounts {
         _pool: &DbPool,
         _req: CreateDiscountRequest,
         _owner: Option<String>,
-    ) -> Result<Discount, AppError> {
+        _creation: IdempotentCreation,
+    ) -> Result<CreateOutcome<Discount>, AppError> {
         unimplemented!("not used by these tests");
     }
 }
@@ -244,7 +261,8 @@ impl VoucherRepositoryPort for FakeVouchers {
         _pool: &DbPool,
         _req: CreateVoucherRequest,
         _owner: Option<String>,
-    ) -> Result<Voucher, AppError> {
+        _creation: IdempotentCreation,
+    ) -> Result<CreateOutcome<Voucher>, AppError> {
         unimplemented!("not used by these tests");
     }
 }
@@ -255,6 +273,17 @@ impl FlashSaleRepositoryPort for FakeFlashSales {
         &self,
         _pool: &DbPool,
         _product_id: &str,
+        _units: i32,
+    ) -> Result<Option<FlashSale>, AppError> {
+        return Ok(self.0.clone());
+    }
+
+    async fn find_active_for_cart(
+        &self,
+        _pool: &DbPool,
+        _product_id: &str,
+        _units: i32,
+        _cart_merchant: Option<&str>,
     ) -> Result<Option<FlashSale>, AppError> {
         return Ok(self.0.clone());
     }
@@ -263,7 +292,8 @@ impl FlashSaleRepositoryPort for FakeFlashSales {
         _pool: &DbPool,
         _req: CreateFlashSaleRequest,
         _owner: Option<String>,
-    ) -> Result<FlashSale, AppError> {
+        _creation: IdempotentCreation,
+    ) -> Result<CreateOutcome<FlashSale>, AppError> {
         unimplemented!("not used by these tests");
     }
 }
@@ -749,4 +779,229 @@ fn a_discount_of_a_kind_this_service_does_not_price_saves_nothing() {
     let d = discount(dec!(100.00), "SHIPPING", None, None);
 
     assert_eq!(evaluator.calculate_savings(&d, dec!(100.00)), dec!(0.00));
+}
+
+fn flash_sale_at(price: Decimal) -> FlashSale {
+    let now = Utc::now();
+    return FlashSale {
+        id: Uuid::new_v4(),
+        title: "flash".to_string(),
+        product_id: "SKU-1".to_string(),
+        flash_price: price,
+        stock_limit: 10,
+        stock_sold: 0,
+        active: true,
+        start_time: now - Duration::hours(1),
+        end_time: now + Duration::hours(1),
+        created_at: now,
+        updated_at: now,
+        merchant_principal_id: None,
+    };
+}
+
+fn shipped_cart(code: Option<&str>) -> CalculatePriceRequest {
+    return CalculatePriceRequest {
+        merchant_principal_id: None,
+        items: vec![item("SKU-1", Some("shoes"), dec!(100.00), 2)],
+        voucher_code: code.map(str::to_string),
+        base_shipping_fee: Some(dec!(15.00)),
+        shipping: None,
+    };
+}
+
+#[tokio::test]
+async fn a_full_percentage_discount_prices_the_goods_at_zero_and_leaves_the_shipping() {
+    let res = service(
+        vec![discount(dec!(100), "PERCENTAGE", None, None)],
+        None,
+        None,
+    )
+    .calculate_price(&unconnected_pool(), shipped_cart(None))
+    .await
+    .expect("calculate_price should succeed");
+
+    assert_eq!(res.subtotal, dec!(0.00));
+    assert_eq!(res.total_discount, dec!(200.00));
+    assert_eq!(res.final_shipping_fee, dec!(15.00));
+    assert_eq!(res.final_total, dec!(15.00));
+}
+
+#[tokio::test]
+async fn a_full_percentage_voucher_takes_off_the_goods_and_never_the_shipping() {
+    let v = voucher(dec!(100), "PERCENTAGE", dec!(0.00), None);
+
+    let res = service(vec![], Some(v), None)
+        .calculate_price(&unconnected_pool(), shipped_cart(Some("PROMO")))
+        .await
+        .expect("calculate_price should succeed");
+
+    assert_eq!(res.subtotal, dec!(200.00));
+    assert_eq!(res.voucher_discount, dec!(200.00));
+    assert_eq!(res.final_total, dec!(15.00));
+}
+
+#[tokio::test]
+async fn a_voucher_with_nothing_left_to_take_off_is_not_applied_so_its_quota_is_kept() {
+    let v = voucher(dec!(50.00), "FIXED", dec!(0.00), None);
+
+    let res = service(
+        vec![discount(dec!(100), "PERCENTAGE", None, None)],
+        Some(v),
+        None,
+    )
+    .calculate_price(&unconnected_pool(), shipped_cart(Some("PROMO")))
+    .await
+    .expect("calculate_price should succeed");
+
+    assert_eq!(res.voucher_discount, dec!(0.00));
+    assert!(res.applied_voucher.is_none(), "{:?}", res.applied_voucher);
+}
+
+#[tokio::test]
+async fn a_stored_voucher_with_a_negative_cap_never_raises_the_bill() {
+    let v = voucher(dec!(50.00), "FIXED", dec!(0.00), Some(dec!(-50000)));
+
+    let res = service(vec![], Some(v), None)
+        .calculate_price(&unconnected_pool(), shipped_cart(Some("PROMO")))
+        .await
+        .expect("calculate_price should succeed");
+
+    assert_eq!(res.voucher_discount, dec!(0.00));
+    assert!(res.applied_voucher.is_none());
+    assert_eq!(res.final_total, dec!(215.00));
+}
+
+#[tokio::test]
+async fn a_stored_flash_sale_with_a_negative_price_is_not_applied() {
+    let res = service(vec![], None, Some(flash_sale_at(dec!(-10.00))))
+        .calculate_price(&unconnected_pool(), shipped_cart(None))
+        .await
+        .expect("calculate_price should succeed");
+
+    assert_eq!(res.items[0].final_unit_price, dec!(100.00));
+    assert!(res.items[0].applied_flash_sale.is_none());
+    assert_eq!(res.subtotal, dec!(200.00));
+}
+
+#[tokio::test]
+async fn a_stored_discount_above_one_hundred_percent_prices_the_goods_at_zero_and_no_lower() {
+    let res = service(
+        vec![discount(dec!(250), "PERCENTAGE", None, None)],
+        None,
+        None,
+    )
+    .calculate_price(&unconnected_pool(), shipped_cart(None))
+    .await
+    .expect("calculate_price should succeed");
+
+    assert_eq!(res.items[0].final_unit_price, dec!(0.00));
+    assert_eq!(res.subtotal, dec!(0.00));
+    assert_eq!(res.total_discount, dec!(200.00));
+}
+
+#[tokio::test]
+async fn a_journey_too_long_to_price_is_refused_rather_than_panicking() {
+    let svc = service_with_rate(
+        vec![],
+        None,
+        None,
+        Some(rate(
+            "KINETIX_INSTANT",
+            dec!(15000),
+            dec!(3000),
+            dec!(0),
+            dec!(0),
+        )),
+    );
+    let endless = quote(
+        "KINETIX_INSTANT",
+        dec!(70_000_000_000_000_000_000_000_000),
+        1_000,
+    );
+
+    let quoted = svc
+        .quote_shipping(&unconnected_pool(), vec![endless.clone()])
+        .await;
+    assert!(matches!(quoted, Err(AppError::BadRequest(_))), "{quoted:?}");
+
+    let priced = svc
+        .calculate_price(
+            &unconnected_pool(),
+            CalculatePriceRequest {
+                merchant_principal_id: None,
+                items: vec![item("SKU-1", None, dec!(10_000.00), 1)],
+                voucher_code: None,
+                base_shipping_fee: None,
+                shipping: Some(endless),
+            },
+        )
+        .await;
+    assert!(
+        matches!(priced, Err(AppError::BadRequest(_))),
+        "{:?}",
+        priced.err()
+    );
+}
+
+struct RecordingFlashSales(std::sync::Mutex<Vec<(i32, Option<String>)>>);
+
+#[async_trait]
+impl FlashSaleRepositoryPort for RecordingFlashSales {
+    async fn find_active_for_product(
+        &self,
+        _pool: &DbPool,
+        _product_id: &str,
+        _units: i32,
+    ) -> Result<Option<FlashSale>, AppError> {
+        panic!("a cart is priced with the cart-scoped lookup");
+    }
+
+    async fn find_active_for_cart(
+        &self,
+        _pool: &DbPool,
+        _product_id: &str,
+        units: i32,
+        cart_merchant: Option<&str>,
+    ) -> Result<Option<FlashSale>, AppError> {
+        self.0
+            .lock()
+            .expect("the recorder is not poisoned")
+            .push((units, cart_merchant.map(str::to_string)));
+        return Ok(None);
+    }
+
+    async fn create(
+        &self,
+        _pool: &DbPool,
+        _req: CreateFlashSaleRequest,
+        _owner: Option<String>,
+        _creation: IdempotentCreation,
+    ) -> Result<CreateOutcome<FlashSale>, AppError> {
+        unimplemented!("not used by these tests");
+    }
+}
+
+#[tokio::test]
+async fn a_cart_asks_for_flash_sales_that_may_apply_to_its_merchant_and_its_units() {
+    let recorder = RecordingFlashSales(std::sync::Mutex::new(Vec::new()));
+    let svc = PricingService::new(
+        FakeDiscounts(vec![]),
+        FakeVouchers(None),
+        recorder,
+        FakeShippingRates(None),
+        Box::new(DefaultDiscountEvaluator),
+        Box::new(DefaultVoucherEvaluator),
+    );
+
+    svc.calculate_price(&unconnected_pool(), shipped_cart(None))
+        .await
+        .expect("calculate_price should succeed");
+    let mut merchant_cart = shipped_cart(None);
+    merchant_cart.merchant_principal_id = Some("merchant-a".to_string());
+    svc.calculate_price(&unconnected_pool(), merchant_cart)
+        .await
+        .expect("calculate_price should succeed");
+
+    let asked = svc.flash_sale_repo.0.lock().expect("not poisoned").clone();
+    assert_eq!(asked, vec![(2, None), (2, Some("merchant-a".to_string()))]);
 }

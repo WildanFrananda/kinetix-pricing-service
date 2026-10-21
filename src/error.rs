@@ -4,9 +4,10 @@ use rocket::http::Status;
 use rocket::response::{Responder, Response, Result};
 use rocket::serde::json::Json;
 use rocket::Request;
-use serde::Serialize;
 use thiserror::Error;
 
+use crate::error_code;
+pub use crate::error_response::ErrorResponse;
 use crate::observability::request_id::REQUEST_ID_KEY;
 
 fn request_id<'r>(request: &'r Request<'_>) -> &'r str {
@@ -33,8 +34,17 @@ pub enum AppError {
     #[error("Forbidden: {0}")]
     Forbidden(String),
 
+    #[error("Conflict: {0}")]
+    Conflict(String),
+
+    #[error("Unprocessable: {0}")]
+    Unprocessable(String),
+
     #[error("Upstream unavailable: {0}")]
     Unavailable(String),
+
+    #[error("Internal error: {0}")]
+    Internal(String),
 }
 
 impl From<PoolError> for AppError {
@@ -43,30 +53,25 @@ impl From<PoolError> for AppError {
     }
 }
 
-#[derive(Serialize)]
-pub struct ErrorResponse {
-    pub error: String,
-    pub message: String,
-    #[serde(rename = "traceId")]
-    pub trace_id: String,
-}
-
-impl ErrorResponse {
-    pub fn new(error: &str, message: &str, request: &Request<'_>) -> Self {
-        return Self {
-            error: error.to_string(),
-            message: message.to_string(),
-            trace_id: request
-                .headers()
-                .get_one(REQUEST_ID_KEY)
-                .unwrap_or("-")
-                .to_string(),
-        };
+impl AppError {
+    pub fn code(&self) -> &'static str {
+        match self {
+            AppError::Database(_) | AppError::Internal(_) => return error_code::INTERNAL_ERROR,
+            AppError::Pool(_) => return error_code::DATABASE_UNAVAILABLE,
+            AppError::NotFound(_) => return error_code::NOT_FOUND,
+            AppError::BadRequest(_) => return error_code::INVALID_REQUEST,
+            AppError::Unauthorized => return error_code::UNAUTHORIZED,
+            AppError::Forbidden(_) => return error_code::FORBIDDEN,
+            AppError::Conflict(_) => return error_code::CONFLICT,
+            AppError::Unprocessable(_) => return error_code::UNPROCESSABLE,
+            AppError::Unavailable(_) => return error_code::UPSTREAM_UNAVAILABLE,
+        }
     }
 }
 
 impl<'r> Responder<'r, 'static> for AppError {
     fn respond_to(self, req: &'r rocket::Request<'_>) -> Result<'static> {
+        let code = self.code();
         let (status, message) = match &self {
             AppError::Database(e) => {
                 tracing::error!(
@@ -88,8 +93,8 @@ impl<'r> Responder<'r, 'static> for AppError {
                     "the connection pool could not hand out a connection"
                 );
                 (
-                    Status::InternalServerError,
-                    "pricing is not able to answer right now. Nothing was changed; try again."
+                    Status::ServiceUnavailable,
+                    "pricing cannot reach its database right now. Nothing was changed; try again."
                         .to_string(),
                 )
             }
@@ -97,6 +102,8 @@ impl<'r> Responder<'r, 'static> for AppError {
             AppError::BadRequest(msg) => (Status::BadRequest, msg.clone()),
             AppError::Unauthorized => (Status::Unauthorized, "Unauthorized".to_string()),
             AppError::Forbidden(msg) => (Status::Forbidden, msg.clone()),
+            AppError::Conflict(msg) => (Status::Conflict, msg.clone()),
+            AppError::Unprocessable(msg) => (Status::UnprocessableEntity, msg.clone()),
             AppError::Unavailable(e) => {
                 tracing::error!(
                     request_id = request_id(req),
@@ -110,13 +117,22 @@ impl<'r> Responder<'r, 'static> for AppError {
                         .to_string(),
                 )
             }
+            AppError::Internal(e) => {
+                tracing::error!(
+                    request_id = request_id(req),
+                    error = %e,
+                    "an internal error reached the edge"
+                );
+                (
+                    Status::InternalServerError,
+                    "something went wrong handling this request. No voucher, discount or quota \
+                     was changed unless a previous response said so."
+                        .to_string(),
+                )
+            }
         };
 
-        let err_json = Json(ErrorResponse::new(
-            status.reason().unwrap_or("Error"),
-            &message,
-            req,
-        ));
+        let err_json = Json(ErrorResponse::new(code, &message, req));
 
         return Response::build_from(err_json.respond_to(req)?)
             .status(status)

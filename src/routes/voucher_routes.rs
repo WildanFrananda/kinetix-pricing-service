@@ -1,49 +1,53 @@
+use chrono::Utc;
 use rocket::serde::json::Json;
 use rocket::{get, post, State};
 
 use crate::error::AppError;
-use crate::guards::AdminOrMerchantGuard;
-use crate::models::{ApplyVoucherRequest, CreateVoucherRequest, Voucher};
+use crate::guards::{AdminOrMerchantGuard, IdempotencyKey, JsonBody, OptionalCaller};
+use crate::models::{
+    normalized_voucher_code, ApplyVoucherRequest, CreateVoucherRequest, IdempotentCreation,
+    Voucher, VoucherView,
+};
 use crate::repositories::{VoucherRepository, VoucherRepositoryPort};
-use crate::services::{previewed, validate_percentage, PromotionService};
+use crate::routes::CreatedResponse;
+use crate::services::{check_voucher, previewed, PromotionService};
 use crate::traits::DefaultVoucherEvaluator;
 use crate::DbPool;
 
 #[post("/api/v1/vouchers", data = "<req>")]
 pub async fn create_voucher(
     auth: AdminOrMerchantGuard,
+    key: IdempotencyKey,
     pool: &State<DbPool>,
     promotions: &State<PromotionService>,
-    req: Json<CreateVoucherRequest>,
-) -> Result<Json<Voucher>, AppError> {
-    let payload = req.into_inner();
-    if payload.code.trim().is_empty() {
-        return Err(AppError::BadRequest(
-            "Voucher code cannot be blank".to_string(),
-        ));
-    }
-    if payload.value <= rust_decimal_macros::dec!(0.0) {
-        return Err(AppError::BadRequest(
-            "Voucher value must be greater than zero".to_string(),
-        ));
-    }
-
-    validate_percentage(&payload.discount_type, payload.value)?;
+    req: JsonBody<CreateVoucherRequest>,
+) -> Result<CreatedResponse<Json<Voucher>>, AppError> {
+    let mut payload = req.into_inner();
+    payload.code = normalized_voucher_code(&payload.code);
+    check_voucher(&payload, Utc::now())?;
 
     let owner = promotions
         .owner_for(&auth.principal_id, &auth.role, None)
         .await?;
 
-    let repo = VoucherRepository;
-    let voucher = repo.create(pool.inner(), payload, owner).await?;
-    return Ok(Json(voucher));
+    let creation = IdempotentCreation {
+        principal_id: auth.principal_id,
+        idempotency_key: key.0,
+    };
+    let outcome = VoucherRepository
+        .create(pool.inner(), payload, owner, creation)
+        .await?;
+
+    return Ok(CreatedResponse::new(Json(outcome.record), outcome.replayed));
 }
 
 #[post("/api/v1/vouchers/apply", data = "<req>")]
 pub async fn apply_voucher(
+    viewer: OptionalCaller,
     pool: &State<DbPool>,
-    req: Json<ApplyVoucherRequest>,
-) -> Result<Json<Option<Voucher>>, AppError> {
+    promotions: &State<PromotionService>,
+    req: JsonBody<ApplyVoucherRequest>,
+) -> Result<Json<Option<VoucherView>>, AppError> {
     let payload = req.into_inner();
     let query_req = ApplyVoucherRequest::new(
         payload.code,
@@ -60,18 +64,30 @@ pub async fn apply_voucher(
     let repo = VoucherRepository;
     let voucher_opt = repo.find_by_code(pool.inner(), &query_req.code).await?;
 
-    return Ok(Json(voucher_opt.and_then(|voucher| {
+    let shown = voucher_opt.and_then(|voucher| {
         return previewed(
             voucher,
             &DefaultVoucherEvaluator,
             query_req.cart_subtotal,
             query_req.merchant_principal_id.as_deref(),
         );
-    })));
+    });
+
+    let Some(voucher) = shown else {
+        return Ok(Json(None));
+    };
+
+    let view = promotions.voucher_view(voucher, viewer.0.as_ref()).await?;
+    return Ok(Json(Some(view)));
 }
 
 #[get("/api/v1/vouchers/<code>")]
-pub async fn get_voucher(pool: &State<DbPool>, code: &str) -> Result<Json<Voucher>, AppError> {
+pub async fn get_voucher(
+    viewer: OptionalCaller,
+    pool: &State<DbPool>,
+    promotions: &State<PromotionService>,
+    code: &str,
+) -> Result<Json<VoucherView>, AppError> {
     let repo = VoucherRepository;
     let voucher = repo
         .find_by_code(pool.inner(), code)
@@ -79,5 +95,7 @@ pub async fn get_voucher(pool: &State<DbPool>, code: &str) -> Result<Json<Vouche
         .ok_or_else(|| {
             return AppError::NotFound(format!("Voucher '{code}' not found"));
         })?;
-    return Ok(Json(voucher));
+
+    let view = promotions.voucher_view(voucher, viewer.0.as_ref()).await?;
+    return Ok(Json(view));
 }

@@ -4,11 +4,12 @@ use uuid::Uuid;
 
 use rust_decimal::Decimal;
 
+use crate::grpc::status_of::status_of;
 use crate::models::{
     CalculatePriceRequest as DomainCalcReq, PriceItemRequest as DomainItemReq,
     ShippingQuoteRequest as DomainShippingQuote,
 };
-use crate::money::{from_money, from_optional_money, to_money};
+use crate::money::{from_money, from_optional_money, to_money, Money};
 use crate::repositories::{QuotaOutcome, QuotaRepository};
 use crate::services::PricingService;
 use crate::DbPool;
@@ -65,6 +66,19 @@ impl PricingGrpcTrait for PricingGrpcServer {
                 }
             };
 
+            if base_price < Decimal::ZERO {
+                return Err(Status::invalid_argument(format!(
+                    "item {} has a negative base_price",
+                    item.product_id
+                )));
+            }
+            if item.quantity < 1 {
+                return Err(Status::invalid_argument(format!(
+                    "item {} has quantity {}; a priced line needs at least one unit",
+                    item.product_id, item.quantity
+                )));
+            }
+
             domain_items.push(DomainItemReq {
                 product_id: item.product_id,
                 category_id: item.category_id,
@@ -75,6 +89,21 @@ impl PricingGrpcTrait for PricingGrpcServer {
 
         #[allow(deprecated)]
         let deprecated_caller_fee = from_optional_money(&req.base_shipping_fee)?;
+
+        let gross = domain_items.iter().try_fold(
+            deprecated_caller_fee.unwrap_or(Decimal::ZERO),
+            |total, item| {
+                return item
+                    .base_price
+                    .checked_mul(Decimal::from(item.quantity))
+                    .and_then(|line| return total.checked_add(line));
+            },
+        );
+        if !gross.is_some_and(|total| return to_money(total).is_some()) {
+            return Err(Status::invalid_argument(
+                "the lines of this cart add up to more than an amount of money can carry",
+            ));
+        }
 
         let domain_req = DomainCalcReq {
             items: domain_items,
@@ -103,37 +132,32 @@ impl PricingGrpcTrait for PricingGrpcServer {
             .pricing_service
             .calculate_price(&self.pool, domain_req)
             .await
-            .map_err(|e| {
-                return Status::internal(format!("Pricing service calculation error: {e}"));
-            })?;
+            .map_err(|e| return status_of(e, "CalculatePrice"))?;
 
-        let pb_items = result
-            .items
-            .into_iter()
-            .map(|item| {
-                return PriceItemResponse {
-                    product_id: item.product_id,
-                    base_price: Some(to_money(item.base_price)),
-                    final_unit_price: Some(to_money(item.final_unit_price)),
-                    quantity: item.quantity,
-                    line_total: Some(to_money(item.line_total)),
-                    applied_flash_sale: item.applied_flash_sale,
-                    applied_discount: item.applied_discount,
-                };
-            })
-            .collect();
+        let mut pb_items = Vec::with_capacity(result.items.len());
+        for item in result.items {
+            pb_items.push(PriceItemResponse {
+                base_price: Some(requested(item.base_price, "base_price")?),
+                final_unit_price: Some(computed(item.final_unit_price, "final_unit_price")?),
+                line_total: Some(computed(item.line_total, "line_total")?),
+                product_id: item.product_id,
+                quantity: item.quantity,
+                applied_flash_sale: item.applied_flash_sale,
+                applied_discount: item.applied_discount,
+            });
+        }
 
         return Ok(Response::new(CalculatePriceResponse {
-            subtotal: Some(to_money(result.subtotal)),
-            total_discount: Some(to_money(result.total_discount)),
-            voucher_discount: Some(to_money(result.voucher_discount)),
-            final_total: Some(to_money(result.final_total)),
+            subtotal: Some(computed(result.subtotal, "subtotal")?),
+            total_discount: Some(computed(result.total_discount, "total_discount")?),
+            voucher_discount: Some(computed(result.voucher_discount, "voucher_discount")?),
+            final_total: Some(computed(result.final_total, "final_total")?),
             applied_voucher: result.applied_voucher,
             items: pb_items,
-            base_shipping_fee: Some(to_money(result.base_shipping_fee)),
-            shipping_discount: Some(to_money(Decimal::ZERO)),
-            final_shipping_fee: Some(to_money(result.final_shipping_fee)),
-            payment_discount: Some(to_money(Decimal::ZERO)),
+            base_shipping_fee: Some(computed(result.base_shipping_fee, "base_shipping_fee")?),
+            shipping_discount: Some(computed(Decimal::ZERO, "shipping_discount")?),
+            final_shipping_fee: Some(computed(result.final_shipping_fee, "final_shipping_fee")?),
+            payment_discount: Some(computed(Decimal::ZERO, "payment_discount")?),
         }));
     }
 
@@ -163,22 +187,18 @@ impl PricingGrpcTrait for PricingGrpcServer {
             .pricing_service
             .quote_shipping(&self.pool, journeys)
             .await
-            .map_err(|e| {
-                return Status::internal(format!("Shipping quote error: {e}"));
-            })?;
+            .map_err(|e| return status_of(e, "QuoteShipping"))?;
 
-        return Ok(Response::new(QuoteShippingResponse {
-            quotes: quotes
-                .into_iter()
-                .map(|quote| {
-                    return QuotedShipping {
-                        service_tier: quote.service_tier,
-                        base_shipping_fee: Some(to_money(quote.base_shipping_fee)),
-                        priced: quote.priced,
-                    };
-                })
-                .collect(),
-        }));
+        let mut quoted = Vec::with_capacity(quotes.len());
+        for quote in quotes {
+            quoted.push(QuotedShipping {
+                base_shipping_fee: Some(computed(quote.base_shipping_fee, "base_shipping_fee")?),
+                service_tier: quote.service_tier,
+                priced: quote.priced,
+            });
+        }
+
+        return Ok(Response::new(QuoteShippingResponse { quotes: quoted }));
     }
 
     async fn redeem_voucher(
@@ -231,6 +251,12 @@ impl PricingGrpcTrait for PricingGrpcServer {
                     "VOUCHER_QUOTA_EXHAUSTED",
                     "this voucher has no quota left",
                 )),
+            },
+            QuotaOutcome::Expired => RedeemVoucherResponse {
+                success: false,
+                already_redeemed: false,
+                remaining_quota: 0,
+                error: Some(error_detail("VOUCHER_EXPIRED", "this voucher has expired")),
             },
             QuotaOutcome::NotFound => RedeemVoucherResponse {
                 success: false,
@@ -285,14 +311,15 @@ impl PricingGrpcTrait for PricingGrpcServer {
                 remaining_quota: remaining,
                 error: None,
             },
-            QuotaOutcome::Exhausted | QuotaOutcome::NotFound | QuotaOutcome::NotForThisMerchant => {
-                ReleaseVoucherRedemptionResponse {
-                    success: false,
-                    already_released: false,
-                    remaining_quota: 0,
-                    error: Some(error_detail("VOUCHER_NOT_FOUND", "no such voucher")),
-                }
-            }
+            QuotaOutcome::Exhausted
+            | QuotaOutcome::Expired
+            | QuotaOutcome::NotFound
+            | QuotaOutcome::NotForThisMerchant => ReleaseVoucherRedemptionResponse {
+                success: false,
+                already_released: false,
+                remaining_quota: 0,
+                error: Some(error_detail("VOUCHER_NOT_FOUND", "no such voucher")),
+            },
         }));
     }
 
@@ -343,7 +370,7 @@ impl PricingGrpcTrait for PricingGrpcServer {
                     "this flash sale has not got that many units left",
                 )),
             },
-            QuotaOutcome::NotFound | QuotaOutcome::NotForThisMerchant => {
+            QuotaOutcome::Expired | QuotaOutcome::NotFound | QuotaOutcome::NotForThisMerchant => {
                 AllocateFlashSaleStockResponse {
                     success: false,
                     already_allocated: false,
@@ -386,14 +413,15 @@ impl PricingGrpcTrait for PricingGrpcServer {
                 remaining_stock: remaining,
                 error: None,
             },
-            QuotaOutcome::Exhausted | QuotaOutcome::NotFound | QuotaOutcome::NotForThisMerchant => {
-                ReleaseFlashSaleAllocationResponse {
-                    success: false,
-                    already_released: false,
-                    remaining_stock: 0,
-                    error: Some(error_detail("FLASH_SALE_NOT_FOUND", "no such flash sale")),
-                }
-            }
+            QuotaOutcome::Exhausted
+            | QuotaOutcome::Expired
+            | QuotaOutcome::NotFound
+            | QuotaOutcome::NotForThisMerchant => ReleaseFlashSaleAllocationResponse {
+                success: false,
+                already_released: false,
+                remaining_stock: 0,
+                error: Some(error_detail("FLASH_SALE_NOT_FOUND", "no such flash sale")),
+            },
         }));
     }
 }
@@ -407,6 +435,23 @@ fn distance_of(service_tier: &str, distance_km: f64) -> Result<Decimal, Status> 
                 "the {service_tier} journey has no usable distance: {distance_km} km"
             ));
         });
+}
+
+fn requested(amount: Decimal, field: &str) -> Result<Money, Status> {
+    return to_money(amount).ok_or_else(|| {
+        return Status::invalid_argument(format!(
+            "{field} {amount} is more than an amount of money can carry"
+        ));
+    });
+}
+
+fn computed(amount: Decimal, field: &str) -> Result<Money, Status> {
+    return to_money(amount).ok_or_else(|| {
+        tracing::error!(field, amount = %amount, "a computed amount does not fit in Money");
+        return Status::internal(format!(
+            "pricing computed a {field} it cannot express as Money"
+        ));
+    });
 }
 
 fn error_detail(code: &str, message: &str) -> ErrorDetail {

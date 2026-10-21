@@ -4,6 +4,8 @@ pub mod clients;
 pub mod config;
 pub mod db;
 pub mod error;
+pub mod error_code;
+pub mod error_response;
 pub mod grpc;
 pub mod guards;
 pub mod models;
