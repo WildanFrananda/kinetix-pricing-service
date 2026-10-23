@@ -2,6 +2,8 @@ use prometheus::{
     Encoder, HistogramOpts, HistogramVec, IntCounterVec, IntGaugeVec, Opts, Registry, TextEncoder,
 };
 
+use super::admin_action_outcome::AdminActionOutcome;
+use super::admin_actions::KNOWN_ADMIN_ACTIONS;
 use super::grpc_labels::KNOWN_GRPC_METHODS;
 
 pub struct Metrics {
@@ -9,6 +11,7 @@ pub struct Metrics {
     http_requests: IntCounterVec,
     http_duration: HistogramVec,
     grpc_server_calls: IntCounterVec,
+    admin_actions: IntCounterVec,
 }
 
 impl Metrics {
@@ -39,6 +42,14 @@ impl Metrics {
             &["grpc_method", "grpc_code"],
         )?;
 
+        let admin_actions = IntCounterVec::new(
+            Opts::new(
+                "kinetix_admin_actions_total",
+                "Admin calls to the endpoints that audit them, by action and by what was decided.",
+            ),
+            &["action", "outcome"],
+        )?;
+
         let build_info = IntGaugeVec::new(
             Opts::new(
                 "kinetix_build_info",
@@ -51,6 +62,7 @@ impl Metrics {
         registry.register(Box::new(http_requests.clone()))?;
         registry.register(Box::new(http_duration.clone()))?;
         registry.register(Box::new(grpc_server_calls.clone()))?;
+        registry.register(Box::new(admin_actions.clone()))?;
         registry.register(Box::new(build_info))?;
 
         let metrics = Metrics {
@@ -58,10 +70,19 @@ impl Metrics {
             http_requests,
             http_duration,
             grpc_server_calls,
+            admin_actions,
         };
 
         for method in KNOWN_GRPC_METHODS {
             metrics.seed_grpc_method(method);
+        }
+
+        for action in KNOWN_ADMIN_ACTIONS {
+            for outcome in AdminActionOutcome::ALL {
+                metrics
+                    .admin_actions
+                    .with_label_values(&[*action, outcome.as_str()]);
+            }
         }
 
         return Ok(metrics);
@@ -94,6 +115,13 @@ impl Metrics {
     pub fn observe_grpc_server_call(&self, grpc_method: &str, grpc_code: &str) {
         self.grpc_server_calls
             .with_label_values(&[grpc_method, grpc_code])
+            .inc();
+        return;
+    }
+
+    pub fn observe_admin_action(&self, action: &str, outcome: AdminActionOutcome) {
+        self.admin_actions
+            .with_label_values(&[action, outcome.as_str()])
             .inc();
         return;
     }

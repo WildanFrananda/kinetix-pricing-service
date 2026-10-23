@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use chrono::Utc;
 use diesel::prelude::*;
 use diesel_async::scoped_futures::ScopedFutureExt;
-use diesel_async::{AsyncConnection, RunQueryDsl};
+use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use uuid::Uuid;
 
 use crate::error::AppError;
@@ -32,6 +32,28 @@ impl DiscountRepositoryPort for DiscountRepository {
         return Ok(records);
     }
 
+    async fn earlier_creation(
+        &self,
+        pool: &DbPool,
+        req: &CreateDiscountRequest,
+        creation: &IdempotentCreation,
+    ) -> Result<Option<Discount>, AppError> {
+        let request_body = PromotionCreationLedger::fingerprint(req)?;
+        let mut conn = pool.get().await?;
+        let earlier = PromotionCreationLedger::earlier(
+            &mut conn,
+            creation,
+            PromotionKind::Discount,
+            &request_body,
+        )
+        .await?;
+        let Some(earlier_id) = earlier else {
+            return Ok(None);
+        };
+
+        return Ok(Some(created(&mut conn, earlier_id).await?));
+    }
+
     async fn create(
         &self,
         pool: &DbPool,
@@ -56,11 +78,7 @@ impl DiscountRepositoryPort for DiscountRepository {
                     .await?;
 
                     if let CreationClaim::Replay(earlier_id) = claim {
-                        let record = discounts
-                            .filter(id.eq(earlier_id))
-                            .select(Discount::as_select())
-                            .first(conn)
-                            .await?;
+                        let record = created(conn, earlier_id).await?;
                         return Ok(CreateOutcome {
                             record,
                             replayed: true,
@@ -97,4 +115,14 @@ impl DiscountRepositoryPort for DiscountRepository {
             })
             .await;
     }
+}
+
+async fn created(conn: &mut AsyncPgConnection, wanted: Uuid) -> Result<Discount, AppError> {
+    let record = discounts
+        .filter(id.eq(wanted))
+        .select(Discount::as_select())
+        .first(conn)
+        .await?;
+
+    return Ok(record);
 }

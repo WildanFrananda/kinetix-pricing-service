@@ -15,7 +15,8 @@ use kinetix_pricing_service::config::AppConfig;
 use kinetix_pricing_service::db::create_pool;
 use kinetix_pricing_service::grpc::{PricingGrpcServer, PricingServiceServer};
 use kinetix_pricing_service::observability::{
-    json_logging, GrpcMetricsLayer, Metrics, MetricsFairing, RequestIdFairing, ShutdownSignal,
+    json_logging, AdminAuditFairing, GrpcMetricsLayer, Metrics, MetricsFairing, RequestIdFairing,
+    ShutdownSignal,
 };
 use kinetix_pricing_service::routes::{
     catchers::{internal_error, not_found, other, unprocessable},
@@ -147,6 +148,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 let rocket = rocket::build()
                     .attach(RequestIdFairing)
                     .attach(MetricsFairing::new(metrics.clone()))
+                    .attach(AdminAuditFairing::new(metrics.clone()))
                     .register(
                         "/",
                         catchers![not_found, unprocessable, internal_error, other],

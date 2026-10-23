@@ -1,7 +1,7 @@
 use rocket::data::{self, Data, FromData, Limits};
 use rocket::http::Status;
 use rocket::Request;
-use serde::de::DeserializeOwned;
+use serde::de::{DeserializeOwned, IgnoredAny};
 use serde_json::error::Category;
 
 use crate::error::AppError;
@@ -9,6 +9,9 @@ use crate::error_code;
 use crate::guards::guard_refusal::GuardRefusal;
 
 const ROOT_PATH: &str = ".";
+const JSON_WHITESPACE: [char; 4] = [' ', '\t', '\n', '\r'];
+const OBJECT_OPENING: char = '{';
+const NOT_AN_OBJECT: &str = "the body must be a JSON object with this endpoint's fields by name.";
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct JsonBody<T>(pub T);
@@ -44,6 +47,27 @@ impl<'r, T: DeserializeOwned + Send> FromData<'r> for JsonBody<T> {
                 );
             }
         };
+
+        if !opens_an_object(&text) {
+            match serde_json::from_str::<IgnoredAny>(&text) {
+                Ok(_) => {
+                    return refuse(
+                        req,
+                        Status::UnprocessableEntity,
+                        error_code::INVALID_BODY,
+                        NOT_AN_OBJECT,
+                    );
+                }
+                Err(error) => {
+                    return refuse(
+                        req,
+                        Status::BadRequest,
+                        error_code::INVALID_JSON,
+                        &format!("the body is not valid JSON: {error}"),
+                    );
+                }
+            }
+        }
 
         let mut deserializer = serde_json::Deserializer::from_str(&text);
         let parsed = serde_path_to_error::deserialize::<_, T>(&mut deserializer);
@@ -84,6 +108,12 @@ impl<'r, T: DeserializeOwned + Send> FromData<'r> for JsonBody<T> {
             }
         }
     }
+}
+
+fn opens_an_object(text: &str) -> bool {
+    return text
+        .trim_start_matches(JSON_WHITESPACE)
+        .starts_with(OBJECT_OPENING);
 }
 
 fn refuse<'r, T>(

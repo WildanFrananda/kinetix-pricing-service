@@ -185,6 +185,16 @@ impl VoucherRepositoryPort for FailingVouchers {
             "the voucher table did not answer".to_string(),
         ));
     }
+
+    async fn earlier_creation(
+        &self,
+        _pool: &DbPool,
+        _req: &CreateVoucherRequest,
+        _creation: &IdempotentCreation,
+    ) -> Result<Option<Voucher>, AppError> {
+        unimplemented!("not used by these tests");
+    }
+
     async fn create(
         &self,
         _pool: &DbPool,
@@ -220,6 +230,16 @@ impl FlashSaleRepositoryPort for FailingFlashSales {
             "the flash sale table did not answer".to_string(),
         ));
     }
+
+    async fn earlier_creation(
+        &self,
+        _pool: &DbPool,
+        _req: &CreateFlashSaleRequest,
+        _creation: &IdempotentCreation,
+    ) -> Result<Option<FlashSale>, AppError> {
+        unimplemented!("not used by these tests");
+    }
+
     async fn create(
         &self,
         _pool: &DbPool,
@@ -240,6 +260,16 @@ impl DiscountRepositoryPort for FakeDiscounts {
     async fn find_all_active(&self, _pool: &DbPool) -> Result<Vec<Discount>, AppError> {
         return Ok(self.0.clone());
     }
+
+    async fn earlier_creation(
+        &self,
+        _pool: &DbPool,
+        _req: &CreateDiscountRequest,
+        _creation: &IdempotentCreation,
+    ) -> Result<Option<Discount>, AppError> {
+        unimplemented!("not used by these tests");
+    }
+
     async fn create(
         &self,
         _pool: &DbPool,
@@ -256,6 +286,16 @@ impl VoucherRepositoryPort for FakeVouchers {
     async fn find_by_code(&self, _pool: &DbPool, _code: &str) -> Result<Option<Voucher>, AppError> {
         return Ok(self.0.clone());
     }
+
+    async fn earlier_creation(
+        &self,
+        _pool: &DbPool,
+        _req: &CreateVoucherRequest,
+        _creation: &IdempotentCreation,
+    ) -> Result<Option<Voucher>, AppError> {
+        unimplemented!("not used by these tests");
+    }
+
     async fn create(
         &self,
         _pool: &DbPool,
@@ -287,6 +327,16 @@ impl FlashSaleRepositoryPort for FakeFlashSales {
     ) -> Result<Option<FlashSale>, AppError> {
         return Ok(self.0.clone());
     }
+
+    async fn earlier_creation(
+        &self,
+        _pool: &DbPool,
+        _req: &CreateFlashSaleRequest,
+        _creation: &IdempotentCreation,
+    ) -> Result<Option<FlashSale>, AppError> {
+        unimplemented!("not used by these tests");
+    }
+
     async fn create(
         &self,
         _pool: &DbPool,
@@ -968,6 +1018,15 @@ impl FlashSaleRepositoryPort for RecordingFlashSales {
             .expect("the recorder is not poisoned")
             .push((units, cart_merchant.map(str::to_string)));
         return Ok(None);
+    }
+
+    async fn earlier_creation(
+        &self,
+        _pool: &DbPool,
+        _req: &CreateFlashSaleRequest,
+        _creation: &IdempotentCreation,
+    ) -> Result<Option<FlashSale>, AppError> {
+        unimplemented!("not used by these tests");
     }
 
     async fn create(

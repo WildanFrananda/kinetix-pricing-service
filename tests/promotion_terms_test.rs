@@ -10,15 +10,20 @@ use kinetix_pricing_service::clients::{
 };
 use kinetix_pricing_service::db::create_pool;
 use kinetix_pricing_service::error::AppError;
-use kinetix_pricing_service::guards::{AdminOrMerchantGuard, IdempotencyKey, JsonBody};
+use kinetix_pricing_service::guards::{
+    AdminActionTarget, AdminOrMerchantGuard, IdempotencyKey, JsonBody,
+};
 use kinetix_pricing_service::models::{
-    CreateDiscountRequest, CreateFlashSaleRequest, CreateVoucherRequest, DiscountType,
+    normalized_voucher_code, CreateDiscountRequest, CreateFlashSaleRequest, CreateVoucherRequest,
+    DiscountType,
 };
 use kinetix_pricing_service::routes::discount_routes::create_discount;
 use kinetix_pricing_service::routes::flash_sale_routes::create_flash_sale;
 use kinetix_pricing_service::routes::voucher_routes::create_voucher;
 use kinetix_pricing_service::services::promotion_terms::EARLIEST_STORABLE_UNIX_SECONDS;
-use kinetix_pricing_service::services::{check_discount, check_voucher, PromotionService};
+use kinetix_pricing_service::services::{
+    check_discount, check_flash_sale, check_voucher, PromotionService,
+};
 use kinetix_pricing_service::DbPool;
 
 type Spoil<T> = Box<dyn Fn(&mut T)>;
@@ -107,6 +112,7 @@ async fn voucher_answer(req: CreateVoucherRequest) -> AppError {
 
     return create_voucher(
         admin(),
+        AdminActionTarget::default(),
         key(),
         (&pool).into(),
         (&promotions).into(),
@@ -122,6 +128,7 @@ async fn discount_answer(req: CreateDiscountRequest) -> AppError {
 
     return create_discount(
         admin(),
+        AdminActionTarget::default(),
         key(),
         (&pool).into(),
         (&promotions).into(),
@@ -137,6 +144,7 @@ async fn flash_sale_answer(req: CreateFlashSaleRequest) -> AppError {
 
     return create_flash_sale(
         admin(),
+        AdminActionTarget::default(),
         key(),
         (&pool).into(),
         (&promotions).into(),
@@ -146,9 +154,15 @@ async fn flash_sale_answer(req: CreateFlashSaleRequest) -> AppError {
     .expect_err("an unconnected pool cannot create anything");
 }
 
-fn refusal_names(answer: AppError, field: &str, case: &str) {
+fn voucher_checked(req: CreateVoucherRequest) -> Result<(), AppError> {
+    let mut req = req;
+    req.code = normalized_voucher_code(&req.code);
+    return check_voucher(&req, Utc::now());
+}
+
+fn refusal_names(answer: Result<(), AppError>, field: &str, case: &str) {
     match answer {
-        AppError::BadRequest(message) => {
+        Err(AppError::BadRequest(message)) => {
             assert!(
                 message.contains(field),
                 "{case}: the refusal does not name {field}: {message}"
@@ -162,15 +176,28 @@ fn chars(count: usize) -> String {
     return "é".repeat(count);
 }
 
-#[tokio::test]
-async fn a_valid_voucher_passes_every_check_and_only_then_reaches_the_database() {
-    let answer = voucher_answer(voucher()).await;
-
-    assert!(matches!(answer, AppError::Pool(_)), "{answer:?}");
+#[test]
+fn a_valid_voucher_discount_and_flash_sale_pass_every_check() {
+    assert!(voucher_checked(voucher()).is_ok());
+    assert!(check_discount(&discount(), Utc::now()).is_ok());
+    assert!(check_flash_sale(&flash_sale(), Utc::now()).is_ok());
 }
 
 #[tokio::test]
-async fn every_bad_voucher_field_is_refused_before_the_database_is_touched() {
+async fn a_create_while_the_database_is_down_is_unavailable_before_identity_or_catalog_is_asked() {
+    let answers = [
+        voucher_answer(voucher()).await,
+        discount_answer(discount()).await,
+        flash_sale_answer(flash_sale()).await,
+    ];
+
+    for answer in answers {
+        assert!(matches!(answer, AppError::Pool(_)), "{answer:?}");
+    }
+}
+
+#[test]
+fn every_bad_voucher_field_is_refused_by_the_checks() {
     let cases: Vec<Case<CreateVoucherRequest>> = vec![
         (
             "blank code",
@@ -275,19 +302,12 @@ async fn every_bad_voucher_field_is_refused_before_the_database_is_touched() {
     for (case, field, spoil) in cases {
         let mut req = voucher();
         spoil(&mut req);
-        refusal_names(voucher_answer(req).await, field, case);
+        refusal_names(voucher_checked(req), field, case);
     }
 }
 
-#[tokio::test]
-async fn a_valid_discount_passes_every_check_and_only_then_reaches_the_database() {
-    let answer = discount_answer(discount()).await;
-
-    assert!(matches!(answer, AppError::Pool(_)), "{answer:?}");
-}
-
-#[tokio::test]
-async fn every_bad_discount_field_is_refused_before_anyone_is_asked() {
+#[test]
+fn every_bad_discount_field_is_refused_by_the_checks() {
     let ancient = DateTime::from_timestamp(EARLIEST_STORABLE_UNIX_SECONDS - 1, 0)
         .expect("a representable time");
     let cases: Vec<Case<CreateDiscountRequest>> = vec![
@@ -366,19 +386,12 @@ async fn every_bad_discount_field_is_refused_before_anyone_is_asked() {
     for (case, field, spoil) in cases {
         let mut req = discount();
         spoil(&mut req);
-        refusal_names(discount_answer(req).await, field, case);
+        refusal_names(check_discount(&req, Utc::now()), field, case);
     }
 }
 
-#[tokio::test]
-async fn a_valid_flash_sale_passes_every_check_and_then_waits_for_catalog() {
-    let answer = flash_sale_answer(flash_sale()).await;
-
-    assert!(matches!(answer, AppError::Unavailable(_)), "{answer:?}");
-}
-
-#[tokio::test]
-async fn every_bad_flash_sale_field_is_refused_before_anyone_is_asked() {
+#[test]
+fn every_bad_flash_sale_field_is_refused_by_the_checks() {
     let cases: Vec<Case<CreateFlashSaleRequest>> = vec![
         (
             "blank title",
@@ -445,7 +458,7 @@ async fn every_bad_flash_sale_field_is_refused_before_anyone_is_asked() {
     for (case, field, spoil) in cases {
         let mut req = flash_sale();
         spoil(&mut req);
-        refusal_names(flash_sale_answer(req).await, field, case);
+        refusal_names(check_flash_sale(&req, Utc::now()), field, case);
     }
 }
 

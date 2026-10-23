@@ -1,3 +1,8 @@
+pub mod admin_action_outcome;
+pub mod admin_actions;
+pub mod admin_actor;
+pub mod admin_audit;
+pub mod admin_audit_fairing;
 pub mod grpc_labels;
 pub mod grpc_metrics_body;
 pub mod grpc_metrics_layer;
@@ -11,6 +16,10 @@ pub mod request_start;
 pub mod route_template;
 pub mod shutdown_signal;
 
+pub use admin_action_outcome::AdminActionOutcome;
+pub use admin_actor::AdminActor;
+pub use admin_audit::record_admin_action;
+pub use admin_audit_fairing::AdminAuditFairing;
 pub use grpc_metrics_layer::GrpcMetricsLayer;
 pub use metrics::Metrics;
 pub use metrics_fairing::MetricsFairing;

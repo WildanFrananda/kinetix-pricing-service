@@ -176,9 +176,14 @@ fn a_path_no_route_claims_is_counted_under_one_bounded_label() {
         body.contains(r#"route="unmatched""#),
         "unrouted requests were not counted:\n{body}"
     );
+    let values: Vec<&str> = body
+        .lines()
+        .filter(|line| return !line.starts_with('#'))
+        .flat_map(label_values)
+        .collect();
     for probe in [".env", "admin", "wp-login"] {
         assert!(
-            !body.contains(probe),
+            !values.iter().any(|value| return value.contains(probe)),
             "the probed path {probe} became a label, and so would every future guess:\n{body}"
         );
     }

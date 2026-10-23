@@ -19,6 +19,12 @@ pub trait FlashSaleRepositoryPort: Send + Sync {
         units: i32,
         cart_merchant: Option<&str>,
     ) -> Result<Option<FlashSale>, AppError>;
+    async fn earlier_creation(
+        &self,
+        pool: &DbPool,
+        req: &CreateFlashSaleRequest,
+        creation: &IdempotentCreation,
+    ) -> Result<Option<FlashSale>, AppError>;
     async fn create(
         &self,
         pool: &DbPool,

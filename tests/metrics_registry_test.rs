@@ -16,6 +16,7 @@ fn every_metric_the_contract_names_is_on_the_body_before_any_traffic() {
         "kinetix_http_request_duration_seconds_sum",
         "kinetix_http_request_duration_seconds_count",
         "kinetix_grpc_server_calls_total",
+        "kinetix_admin_actions_total",
         "kinetix_build_info",
     ] {
         assert!(

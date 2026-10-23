@@ -2,7 +2,10 @@ use std::io::{Result, Write};
 use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
+use tracing::level_filters::LevelFilter;
+use tracing::Subscriber;
 use tracing_subscriber::fmt::MakeWriter;
+use tracing_subscriber::{EnvFilter, Layer, Registry};
 
 use kinetix_pricing_service::observability::json_logging;
 
@@ -125,5 +128,51 @@ fn an_id_with_json_metacharacters_would_be_escaped_and_the_test_would_say_so() {
             .chars()
             .all(|character| character.is_ascii_alphanumeric() || character == '-'),
         "the ids this estate generates are no longer plain enough to grep for"
+    );
+}
+
+#[test]
+fn an_admin_action_is_one_line_whose_target_is_what_it_acted_on() {
+    let output = captured(|| {
+        tracing::info!(
+            target: "admin_action",
+            event = "admin_action",
+            actor = "admin-principal",
+            action = "pricing.voucher_create",
+            target = "8f3a1c22-0e5b-4a91-9f0d-2b7c11d4e6aa",
+            outcome = "done",
+            request_id = CORRELATION_ID,
+            "admin_action"
+        );
+    });
+
+    let lines: Vec<&str> = output.lines().collect();
+    assert_eq!(
+        lines.len(),
+        1,
+        "one admin action did not make one line:\n{output}"
+    );
+    assert_eq!(lines[0].matches(r#""target":"#).count(), 1, "{output}");
+
+    let line: Value = serde_json::from_str(lines[0]).expect("the log line is not JSON");
+    assert_eq!(line["target"], "8f3a1c22-0e5b-4a91-9f0d-2b7c11d4e6aa");
+    assert_eq!(line["action"], "pricing.voucher_create");
+    assert_eq!(line["level"], "INFO");
+}
+
+#[test]
+fn the_admin_layer_asks_the_log_facade_for_nothing_below_info() {
+    let buffer = Arc::new(Mutex::new(Vec::new()));
+    let subscriber = json_logging::subscriber(SharedBuffer(buffer));
+    let service = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    let widest = <EnvFilter as Layer<Registry>>::max_level_hint(&service)
+        .unwrap_or(LevelFilter::TRACE)
+        .max(LevelFilter::INFO);
+
+    let hint = subscriber.max_level_hint().unwrap_or(LevelFilter::TRACE);
+
+    assert!(
+        hint <= widest,
+        "the subscriber asks for {hint}, wider than {widest}"
     );
 }

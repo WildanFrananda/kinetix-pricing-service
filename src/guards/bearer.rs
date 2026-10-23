@@ -6,8 +6,10 @@ use crate::error_code;
 use crate::guards::bearer_failure::BearerFailure;
 use crate::guards::guard_refusal::GuardRefusal;
 use crate::observability::request_id::REQUEST_ID_KEY;
+use crate::observability::AdminActor;
 use crate::security::jwt::{AccessClaims, JwtError, JwtVerifier};
 
+const ADMIN_ROLE: &str = "admin";
 const UNAUTHORIZED: &str = "this endpoint needs a valid identity access token.";
 const IDENTITY_UNAVAILABLE: &str = "pricing cannot check the access token because identity's \
                                     signing keys cannot be fetched right now. Nothing was \
@@ -31,7 +33,12 @@ pub async fn read_bearer(req: &Request<'_>) -> Result<AccessClaims, BearerFailur
     };
 
     match verifier.verify_access(token).await {
-        Ok(claims) => return Ok(claims),
+        Ok(claims) => {
+            if claims.role == ADMIN_ROLE {
+                AdminActor::record(req, &claims.sub);
+            }
+            return Ok(claims);
+        }
         Err(JwtError::Unavailable(reason)) => {
             tracing::error!(
                 request_id = req.headers().get_one(REQUEST_ID_KEY).unwrap_or("-"),
