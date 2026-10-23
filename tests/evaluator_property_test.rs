@@ -159,6 +159,15 @@ impl DiscountRepositoryPort for Discounts {
         return Ok(self.0.clone());
     }
 
+    async fn earlier_creation(
+        &self,
+        _pool: &DbPool,
+        _req: &CreateDiscountRequest,
+        _creation: &IdempotentCreation,
+    ) -> Result<Option<Discount>, AppError> {
+        unimplemented!("not used by these tests");
+    }
+
     async fn create(
         &self,
         _pool: &DbPool,
@@ -174,6 +183,15 @@ impl DiscountRepositoryPort for Discounts {
 impl VoucherRepositoryPort for Vouchers {
     async fn find_by_code(&self, _pool: &DbPool, _code: &str) -> Result<Option<Voucher>, AppError> {
         return Ok(self.0.clone());
+    }
+
+    async fn earlier_creation(
+        &self,
+        _pool: &DbPool,
+        _req: &CreateVoucherRequest,
+        _creation: &IdempotentCreation,
+    ) -> Result<Option<Voucher>, AppError> {
+        unimplemented!("not used by these tests");
     }
 
     async fn create(
@@ -206,6 +224,15 @@ impl FlashSaleRepositoryPort for FlashSales {
         _cart_merchant: Option<&str>,
     ) -> Result<Option<FlashSale>, AppError> {
         return Ok(self.0.clone());
+    }
+
+    async fn earlier_creation(
+        &self,
+        _pool: &DbPool,
+        _req: &CreateFlashSaleRequest,
+        _creation: &IdempotentCreation,
+    ) -> Result<Option<FlashSale>, AppError> {
+        unimplemented!("not used by these tests");
     }
 
     async fn create(

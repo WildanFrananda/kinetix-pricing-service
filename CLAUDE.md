@@ -28,12 +28,13 @@ of 0 and a `final_total` equal to the shipping. Refusing a zero total is order's
 
 ## A create refuses what the columns cannot hold
 
-`services/promotion_terms.rs` checks every field before identity, catalog or Postgres are asked, and its limits
-are the migration's: `NUMERIC(12,2)` holds less than 10^10 and two places, and an amount with more places is
-refused rather than rounded (`10.000` is two places; `10.005` is three); `VARCHAR(n)` counts characters, not
-bytes; Postgres stores no NUL in text, and no time before 4714-11-24 BC (`EARLIEST_STORABLE_UNIX_SECONDS`). A
-window must end in the future and after it starts; a voucher must expire in the future. `CalculatePrice`
-refuses a line with no units or a negative price.
+`services/promotion_terms.rs` checks every field of a new key's create before identity or catalog is asked and
+before anything is written (the ledger is read first, see below), and its limits are the migration's:
+`NUMERIC(12,2)` holds less than 10^10 and two places, and an amount with more places is refused rather than
+rounded (`10.000` is two places; `10.005` is three); `VARCHAR(n)` counts characters, not bytes; Postgres stores
+no NUL in text, and no time before 4714-11-24 BC (`EARLIEST_STORABLE_UNIX_SECONDS`). A window must end in the
+future and after it starts; a voucher must expire in the future. `CalculatePrice` refuses a line with no units
+or a negative price.
 
 ## Creates are deduplicated by `Idempotency-Key`
 
@@ -44,6 +45,14 @@ true`; with a different body, or for another kind of promotion, it is 422. Keys 
 sent them. A create that fails, a taken voucher code included, leaves no ledger row, so its key stays free.
 The body is compared as sent, so a retry must resend the same bytes, `expires_at` included. Two racing requests
 with one key make one promotion: the second insert waits on the ledger's primary key.
+
+The ledger is read before anything else is decided (`earlier_creation`, then the checks, then `owner_for`, then
+the insert). Until 2026-10-23 the checks against the clock and the ownership lookup ran first, so a retry of a
+create that had succeeded was refused once the window had closed (400), the seller was no longer trading (403),
+catalog had dropped the product (404) or identity or catalog was down (503), and a client could make a duplicate
+under a new key. A known key now replays without asking anyone; a key spent on another body is 422 before any
+check; only a new key is checked. With Postgres down every create is 503, a malformed one included, because
+pricing cannot tell whether the key is a retry. `tests/idempotent_replay_test.rs` holds each ordering.
 
 Voucher codes are global across merchants (the user's ruling, 2026-10-21): a taken code is 409, never the
 unique-violation 500 it was. They are also case-insensitive: `normalized_voucher_code` upper-cases a code on
@@ -102,4 +111,25 @@ too long or heavy to price is a 400 refusal instead of a panic.
 `JsonBody` use only those. A database pool that cannot hand out a connection is 503 `DATABASE_UNAVAILABLE`,
 not 500. `JsonBody` replaces Rocket's `Json` as the data guard on every route that reads a body, so a body that
 does not parse names the field (`quota: invalid type …`, `missing field \`title\``): 422 `INVALID_BODY`, or
-400 `INVALID_JSON` for a body that is not JSON.
+400 `INVALID_JSON` for a body that is not JSON. A body that is JSON but not an object is 422 `INVALID_BODY`
+before serde sees it: a derived `Deserialize` also takes an array of the fields in declaration order.
+
+## Admin uses are audited
+
+`AdminAuditFairing` writes one `admin_action` line and counts `kinetix_admin_actions_total{action,outcome}` for
+every request an admin token makes of an audited route, whatever answered it, a guard's refusal included; a
+seller's or a buyer's call is not audited. The routes are named in `observability/admin_actions.rs` by handler
+name: `pricing.discount_create`, `pricing.voucher_create`, `pricing.flash_sale_create` (an infrastructure alert
+matches `pricing\..+_create`), `pricing.voucher_read` (`GET /vouchers/{code}`) and `pricing.voucher_apply`, the
+two reads that show an admin quota and use. Renaming a handler drops it from the audit;
+`tests/admin_audit_test.rs` fails when that happens. `read_bearer` records the admin as `AdminActor`, the handler
+names what it acted on through `AdminActionTarget` (the promotion created or replayed, the voucher code read),
+and the outcome is the status: `done` below 400, `refused` below 500, `failed` above. `target` is `-` when nothing
+was named. Pricing has no update, delete or deactivate, and no admin gRPC call.
+
+The line's `target` key is the id acted on, so the audit lines come from their own JSON layer that omits
+tracing's module-path `target`; the two layers would otherwise both write `target` into one object. That layer
+filters by event target with `Targets`, not RUST_LOG, so a narrower log level never silences the audit, and its
+level hint is INFO, so the `log` facade is still asked for nothing below what RUST_LOG wants
+(`json_log_test.rs`). `admin_audit_test.rs` signs real access tokens with a key the `openssl` command generates
+when the tests start, so no private key is committed; the test runner needs `openssl` on its PATH.

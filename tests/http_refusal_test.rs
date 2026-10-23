@@ -363,10 +363,38 @@ fn a_missing_field_is_422_naming_the_field() {
 fn a_body_that_is_not_json_is_400() {
     let client = client();
 
-    for body in ["{", "not json", &format!("{GOOD_VOUCHER} trailing")] {
+    for body in [
+        "{",
+        "[\"SAVE10\",",
+        "",
+        "not json",
+        &format!("{GOOD_VOUCHER} trailing"),
+    ] {
         let (status, answer) = body_answer(&client, body);
         assert_eq!(status, Status::BadRequest, "{body}");
         assert_eq!(answer["error"], "INVALID_JSON", "{body}");
+    }
+}
+
+#[test]
+fn a_body_that_is_json_but_not_an_object_is_422_even_with_every_field_in_order() {
+    let client = client();
+    let in_declaration_order =
+        r#"["SAVE10","Ten off","FIXED","10000","0",null,5,"2099-01-01T00:00:00Z"]"#;
+
+    for body in [in_declaration_order, " \n[]", "\"SAVE10\"", "5", "null"] {
+        let response = client.post("/stub/body").body(body).dispatch();
+
+        assert_eq!(response.status(), Status::UnprocessableEntity, "{body}");
+        let answer = body_of(response);
+        assert_eq!(answer["error"], "INVALID_BODY", "{body}: {answer}");
+        assert!(
+            answer["message"]
+                .as_str()
+                .unwrap_or("")
+                .contains("JSON object"),
+            "{body}: {answer}"
+        );
     }
 }
 

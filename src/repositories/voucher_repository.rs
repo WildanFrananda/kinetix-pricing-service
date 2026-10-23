@@ -3,7 +3,7 @@ use chrono::Utc;
 use diesel::prelude::*;
 use diesel::result::{DatabaseErrorKind, Error as DieselError};
 use diesel_async::scoped_futures::ScopedFutureExt;
-use diesel_async::{AsyncConnection, RunQueryDsl};
+use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use uuid::Uuid;
 
 use crate::error::AppError;
@@ -43,6 +43,30 @@ impl VoucherRepositoryPort for VoucherRepository {
         return Ok(record);
     }
 
+    async fn earlier_creation(
+        &self,
+        pool: &DbPool,
+        req: &CreateVoucherRequest,
+        creation: &IdempotentCreation,
+    ) -> Result<Option<Voucher>, AppError> {
+        let mut normalized = req.clone();
+        normalized.code = normalized_voucher_code(&req.code);
+        let request_body = PromotionCreationLedger::fingerprint(&normalized)?;
+        let mut conn = pool.get().await?;
+        let earlier = PromotionCreationLedger::earlier(
+            &mut conn,
+            creation,
+            PromotionKind::Voucher,
+            &request_body,
+        )
+        .await?;
+        let Some(earlier_id) = earlier else {
+            return Ok(None);
+        };
+
+        return Ok(Some(created(&mut conn, earlier_id).await?));
+    }
+
     async fn create(
         &self,
         pool: &DbPool,
@@ -69,11 +93,7 @@ impl VoucherRepositoryPort for VoucherRepository {
                     .await?;
 
                     if let CreationClaim::Replay(earlier_id) = claim {
-                        let record = vouchers
-                            .filter(id.eq(earlier_id))
-                            .select(Voucher::as_select())
-                            .first(conn)
-                            .await?;
+                        let record = created(conn, earlier_id).await?;
                         return Ok(CreateOutcome {
                             record,
                             replayed: true,
@@ -114,6 +134,16 @@ impl VoucherRepositoryPort for VoucherRepository {
             })
             .await;
     }
+}
+
+async fn created(conn: &mut AsyncPgConnection, wanted: Uuid) -> Result<Voucher, AppError> {
+    let record = vouchers
+        .filter(id.eq(wanted))
+        .select(Voucher::as_select())
+        .first(conn)
+        .await?;
+
+    return Ok(record);
 }
 
 fn code_taken(error: DieselError, requested_code: &str) -> AppError {

@@ -3,7 +3,7 @@ use chrono::Utc;
 use diesel::pg::Pg;
 use diesel::prelude::*;
 use diesel_async::scoped_futures::ScopedFutureExt;
-use diesel_async::{AsyncConnection, RunQueryDsl};
+use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use uuid::Uuid;
 
 use crate::error::AppError;
@@ -59,6 +59,28 @@ impl FlashSaleRepositoryPort for FlashSaleRepository {
         return Ok(record);
     }
 
+    async fn earlier_creation(
+        &self,
+        pool: &DbPool,
+        req: &CreateFlashSaleRequest,
+        creation: &IdempotentCreation,
+    ) -> Result<Option<FlashSale>, AppError> {
+        let request_body = PromotionCreationLedger::fingerprint(req)?;
+        let mut conn = pool.get().await?;
+        let earlier = PromotionCreationLedger::earlier(
+            &mut conn,
+            creation,
+            PromotionKind::FlashSale,
+            &request_body,
+        )
+        .await?;
+        let Some(earlier_id) = earlier else {
+            return Ok(None);
+        };
+
+        return Ok(Some(created(&mut conn, earlier_id).await?));
+    }
+
     async fn create(
         &self,
         pool: &DbPool,
@@ -83,11 +105,7 @@ impl FlashSaleRepositoryPort for FlashSaleRepository {
                     .await?;
 
                     if let CreationClaim::Replay(earlier_id) = claim {
-                        let record = flash_sales
-                            .filter(id.eq(earlier_id))
-                            .select(FlashSale::as_select())
-                            .first(conn)
-                            .await?;
+                        let record = created(conn, earlier_id).await?;
                         return Ok(CreateOutcome {
                             record,
                             replayed: true,
@@ -124,6 +142,16 @@ impl FlashSaleRepositoryPort for FlashSaleRepository {
             })
             .await;
     }
+}
+
+async fn created(conn: &mut AsyncPgConnection, wanted: Uuid) -> Result<FlashSale, AppError> {
+    let record = flash_sales
+        .filter(id.eq(wanted))
+        .select(FlashSale::as_select())
+        .first(conn)
+        .await?;
+
+    return Ok(record);
 }
 
 fn selling<'a>(

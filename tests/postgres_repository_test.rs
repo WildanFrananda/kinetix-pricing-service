@@ -15,7 +15,7 @@ use kinetix_pricing_service::db::create_pool;
 use kinetix_pricing_service::error::AppError;
 use kinetix_pricing_service::grpc::PricingGrpcServer;
 use kinetix_pricing_service::guards::{
-    AdminOrMerchantGuard, IdempotencyKey, JsonBody, OptionalCaller,
+    AdminActionTarget, AdminOrMerchantGuard, IdempotencyKey, JsonBody, OptionalCaller,
 };
 use kinetix_pricing_service::models::{
     CreateDiscountRequest, CreateFlashSaleRequest, CreateVoucherRequest, DiscountType,
@@ -124,6 +124,7 @@ async fn create(
     let promotions = promotions();
     let created = create_voucher(
         admin(principal_id),
+        AdminActionTarget::default(),
         IdempotencyKey(key.to_string()),
         pool.into(),
         (&promotions).into(),
@@ -376,6 +377,7 @@ async fn an_exhausted_voucher_is_not_found_by_get_and_not_offered_by_apply() {
 
     let shown = get_voucher(
         OptionalCaller(None),
+        AdminActionTarget::default(),
         (&pool).into(),
         (&promotions).into(),
         &wanted,
@@ -394,6 +396,7 @@ async fn an_exhausted_voucher_is_not_found_by_get_and_not_offered_by_apply() {
 
     let read = get_voucher(
         OptionalCaller(None),
+        AdminActionTarget::default(),
         (&pool).into(),
         (&promotions).into(),
         &wanted,
@@ -407,6 +410,7 @@ async fn an_exhausted_voucher_is_not_found_by_get_and_not_offered_by_apply() {
 
     let applied = apply_voucher(
         OptionalCaller(None),
+        AdminActionTarget::default(),
         (&pool).into(),
         (&promotions).into(),
         JsonBody(kinetix_pricing_service::models::ApplyVoucherRequest::new(
@@ -699,6 +703,7 @@ async fn voucher_codes_are_one_code_whatever_their_case() {
     let mixed = format!("S{}", &typed[1..]);
     let shown = get_voucher(
         OptionalCaller(None),
+        AdminActionTarget::default(),
         (&pool).into(),
         (&promotions).into(),
         &mixed,

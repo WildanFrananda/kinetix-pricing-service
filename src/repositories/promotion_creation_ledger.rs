@@ -18,6 +18,34 @@ impl PromotionCreationLedger {
         });
     }
 
+    pub async fn earlier(
+        conn: &mut AsyncPgConnection,
+        creation: &IdempotentCreation,
+        kind: PromotionKind,
+        request_body: &str,
+    ) -> Result<Option<Uuid>, AppError> {
+        let earlier: Option<PromotionCreation> = ledger::promotion_creations
+            .filter(ledger::principal_id.eq(&creation.principal_id))
+            .filter(ledger::idempotency_key.eq(&creation.idempotency_key))
+            .select(PromotionCreation::as_select())
+            .first(conn)
+            .await
+            .optional()?;
+        let Some(earlier) = earlier else {
+            return Ok(None);
+        };
+
+        if earlier.promotion_kind != kind.as_str() || earlier.request_body != request_body {
+            return Err(AppError::Unprocessable(
+                "this Idempotency-Key was already used for a different request; send a new key \
+                 to create another promotion"
+                    .to_string(),
+            ));
+        }
+
+        return Ok(Some(earlier.promotion_id));
+    }
+
     pub async fn claim(
         conn: &mut AsyncPgConnection,
         creation: &IdempotentCreation,
@@ -43,21 +71,13 @@ impl PromotionCreationLedger {
             return Ok(CreationClaim::Fresh);
         }
 
-        let earlier: PromotionCreation = ledger::promotion_creations
-            .filter(ledger::principal_id.eq(&creation.principal_id))
-            .filter(ledger::idempotency_key.eq(&creation.idempotency_key))
-            .select(PromotionCreation::as_select())
-            .first(conn)
-            .await?;
-
-        if earlier.promotion_kind != kind.as_str() || earlier.request_body != request_body {
-            return Err(AppError::Unprocessable(
-                "this Idempotency-Key was already used for a different request; send a new key \
-                 to create another promotion"
-                    .to_string(),
-            ));
+        match Self::earlier(conn, creation, kind, request_body).await? {
+            Some(earlier_id) => return Ok(CreationClaim::Replay(earlier_id)),
+            None => {
+                return Err(AppError::Internal(
+                    "the ledger refused the key and then held no row for it".to_string(),
+                ));
+            }
         }
-
-        return Ok(CreationClaim::Replay(earlier.promotion_id));
     }
 }
