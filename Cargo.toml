@@ -46,7 +46,7 @@ chrono = { version = "0.4", features = ["serde"] }
 rust_decimal = { version = "1.35", features = ["db-postgres", "db-diesel2-postgres", "serde"] }
 rust_decimal_macros = "1.35"
 uuid = { version = "1.8", features = ["v4", "serde"] }
-thiserror = "1.0"
+thiserror = "2.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 dotenvy = "0.15"
