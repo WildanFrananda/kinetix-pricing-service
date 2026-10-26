@@ -31,7 +31,7 @@ jobs:
       KINETIX_TEST_POSTGRES: "postgres://ci:ci-ephemeral-not-a-deployed-credential@localhost:5432/kinetix_pricing_test"
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # The toolchain the Dockerfile builds with, so a green run means the shipped image compiles. Named in
       # `toolchain`, not in the action's ref: Dependabot read `@1.88.0` as the action's version and proposed
