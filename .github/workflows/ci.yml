@@ -33,9 +33,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      # The toolchain the Dockerfile builds with, so a green run means the shipped image compiles.
-      - uses: dtolnay/rust-toolchain@1.88.0
+      # The toolchain the Dockerfile builds with, so a green run means the shipped image compiles. Named in
+      # `toolchain`, not in the action's ref: Dependabot read `@1.88.0` as the action's version and proposed
+      # `@1.120.0`, a Rust that does not exist. Move this and the Dockerfile's `FROM rust:` together.
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: "1.99"
           components: clippy, rustfmt
 
       - uses: Swatinem/rust-cache@v2
