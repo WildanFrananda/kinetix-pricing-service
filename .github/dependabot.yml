@@ -36,11 +36,18 @@ updates:
           - patch
     # tonic 0.11 is built on http 0.2 and http-body 0.4, and GrpcMetricsBody implements tonic's Body.
     # http-body 1.0 replaced poll_data/poll_trailers with poll_frame, so these move only with tonic 0.12+.
+    # tonic-reflection and prost are tonic's own family: 0.14 of either needs that same move, together.
     ignore:
       - dependency-name: "http"
         update-types:
           - version-update:semver-major
       - dependency-name: "http-body"
+        update-types:
+          - version-update:semver-major
+      - dependency-name: "tonic*"
+        update-types:
+          - version-update:semver-major
+      - dependency-name: "prost*"
         update-types:
           - version-update:semver-major
     commit-message:
