@@ -40,7 +40,7 @@ serde_json = "1.0"
 serde_path_to_error = "0.1"
 diesel = { version = "2.2", features = ["postgres", "chrono", "uuid", "numeric"] }
 diesel_migrations = { version = "2.2", features = ["postgres"] }
-diesel-async = { version = "0.5", features = ["postgres", "deadpool"] }
+diesel-async = { version = "0.6", features = ["postgres", "deadpool"] }
 futures-util = "0.3"
 chrono = { version = "0.4", features = ["serde"] }
 rust_decimal = { version = "1.35", features = ["db-postgres", "db-diesel2-postgres", "serde"] }
