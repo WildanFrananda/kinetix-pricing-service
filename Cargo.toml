@@ -58,7 +58,7 @@ prometheus = { version = "0.14", default-features = false }
 # The gRPC metric layer sits inside tonic's own tower stack, so it has to speak the versions tonic
 # 0.11 links: http 0.2 and http-body 0.4, not the 1.x pair reqwest brings in beside them.
 http = "0.2"
-http-body = "0.4"
+http-body = "1.1"
 tower-layer = "0.3"
 tower-service = "0.3"
 
