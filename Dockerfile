@@ -9,7 +9,7 @@
 # That feature is not stabilised before 1.85, so an older toolchain cannot even parse the
 # manifest — the build fails at dependency download, before compiling a line of this crate.
 
-FROM rust:1.99-slim-bookworm@sha256:86234e857a413004348b471d11a4ebe1aa92d2eae2b6b143cac68fd1ac3c48be AS build
+FROM rust:1.99-slim-bookworm@sha256:24707e70a4f1e23d9a7b25202ec43126d28a52294b96aad5c670df1fd1f1d400 AS build
 
 RUN apt-get update && apt-get install --no-install-recommends -y \
         libpq-dev pkg-config ca-certificates git \
@@ -39,7 +39,7 @@ COPY Rocket.toml ./
 # Touch the real sources so cargo does not reuse the dummy fingerprints above.
 RUN touch src/main.rs src/lib.rs && cargo build --release --locked
 
-FROM debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8 AS final
+FROM debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3 AS final
 
 # curl is here for the compose healthcheck, which probes /health/ready over HTTP. Without it
 # this image has no way at all to make an HTTP request, and the service could only be checked
