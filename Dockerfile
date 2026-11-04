@@ -39,7 +39,7 @@ COPY Rocket.toml ./
 # Touch the real sources so cargo does not reuse the dummy fingerprints above.
 RUN touch src/main.rs src/lib.rs && cargo build --release --locked
 
-FROM debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8 AS final
+FROM debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3 AS final
 
 # curl is here for the compose healthcheck, which probes /health/ready over HTTP. Without it
 # this image has no way at all to make an HTTP request, and the service could only be checked
