@@ -1,7 +1,7 @@
 -- The shipping rate card, in the service that owns money.
 --
 -- These four rates lived in matching's source until 2026-09-21 — `15_000 + dist_km * 3_000` and
--- three more like it, in `lib/fleet_pulse/shipping.ex`, with `shipping_server.ex` turning the
+-- three more like it, in `lib/kinetix_matching/shipping.ex`, with `shipping_server.ex` turning the
 -- result into a `Money`. A service whose job is dispatching couriers was the authority for a
 -- money field in a checkout, and the only way to change a price was a release of that service.
 -- (docs/BOUNDARY-DEBT.md M1)

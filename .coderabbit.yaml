@@ -1,0 +1,33 @@
+language: "en-US"
+reviews:
+  profile: "assertive"
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - "main"
+      - "development"
+  path_filters:
+    - "!src/schema.rs"
+    - "!.contracts/**"
+  path_instructions:
+    - path: "src/**"
+      instructions: |
+        - Enforce explicit `return` statements in every Rust function (including match arms); never suggest removing `return` (`needless_return` is intentionally disabled in `Cargo.toml`).
+        - Enforce the layered architecture (`routes -> services -> repositories -> models`) with trait-based DI (`src/traits/**`), and flag any `#[cfg(test)]` test code placed inside `src/`.
+        - Flag any hardcoded fallback secrets, default environment URLs, static/legacy merchant API keys, pseudo-random metric fallbacks, or mocked/dummy production logic.
+        - Flag verbose or redundant comments; keep code self-documenting and 100% English.
+    - path: "src/grpc/**"
+      instructions: |
+        - Verify Tonic gRPC handlers align with generated Protobuf stubs, map domain refusals to explicit `tonic::Status` codes, and preserve SPIFFE/mTLS peer authorization and metrics.
+    - path: "src/repositories/**"
+      instructions: |
+        - Verify Diesel Async queries and transactions preserve atomicity for quota and voucher redemptions and surface database/connection failures honestly rather than swallowing them as empty or zero business results.
+    - path: "migrations/**"
+      instructions: |
+        - Verify migrations remain reversible (`up.sql` / `down.sql`) where practical and enforce database-level constraints (`NOT NULL`, `CHECK`, foreign keys, unique indexes).
+    - path: "tests/**"
+      instructions: |
+        - Verify unit, property (`proptest`), HTTP, and gRPC tests cover edge cases, precision/rounding, concurrency, and error states cleanly without weakening assertions or hardcoding real secrets.
+chat:
+  auto_reply: true

@@ -2,7 +2,6 @@ use async_trait::async_trait;
 use chrono::Utc;
 use diesel::pg::Pg;
 use diesel::prelude::*;
-use diesel_async::scoped_futures::ScopedFutureExt;
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use uuid::Uuid;
 
@@ -92,53 +91,50 @@ impl FlashSaleRepositoryPort for FlashSaleRepository {
         let mut conn = pool.get().await?;
 
         return conn
-            .transaction::<_, AppError, _>(|conn| {
-                async move {
-                    let new_id = Uuid::new_v4();
-                    let claim = PromotionCreationLedger::claim(
-                        conn,
-                        &creation,
-                        PromotionKind::FlashSale,
-                        new_id,
-                        &request_body,
-                    )
-                    .await?;
+            .transaction(async move |conn| -> Result<_, AppError> {
+                let new_id = Uuid::new_v4();
+                let claim = PromotionCreationLedger::claim(
+                    conn,
+                    &creation,
+                    PromotionKind::FlashSale,
+                    new_id,
+                    &request_body,
+                )
+                .await?;
 
-                    if let CreationClaim::Replay(earlier_id) = claim {
-                        let record = created(conn, earlier_id).await?;
-                        return Ok(CreateOutcome {
-                            record,
-                            replayed: true,
-                        });
-                    }
-
-                    let now = Utc::now();
-                    let new_flash_sale = FlashSale {
-                        id: new_id,
-                        title: req.title,
-                        product_id: req.product_id,
-                        flash_price: req.flash_price,
-                        stock_limit: req.stock_limit,
-                        stock_sold: 0,
-                        active: true,
-                        start_time: req.start_time,
-                        end_time: req.end_time,
-                        created_at: now,
-                        updated_at: now,
-                        merchant_principal_id: owner,
-                    };
-
-                    let record = diesel::insert_into(flash_sales)
-                        .values(&new_flash_sale)
-                        .get_result::<FlashSale>(conn)
-                        .await?;
-
+                if let CreationClaim::Replay(earlier_id) = claim {
+                    let record = created(conn, earlier_id).await?;
                     return Ok(CreateOutcome {
                         record,
-                        replayed: false,
+                        replayed: true,
                     });
                 }
-                .scope_boxed()
+
+                let now = Utc::now();
+                let new_flash_sale = FlashSale {
+                    id: new_id,
+                    title: req.title,
+                    product_id: req.product_id,
+                    flash_price: req.flash_price,
+                    stock_limit: req.stock_limit,
+                    stock_sold: 0,
+                    active: true,
+                    start_time: req.start_time,
+                    end_time: req.end_time,
+                    created_at: now,
+                    updated_at: now,
+                    merchant_principal_id: owner,
+                };
+
+                let record = diesel::insert_into(flash_sales)
+                    .values(&new_flash_sale)
+                    .get_result::<FlashSale>(conn)
+                    .await?;
+
+                return Ok(CreateOutcome {
+                    record,
+                    replayed: false,
+                });
             })
             .await;
     }
