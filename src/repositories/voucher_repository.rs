@@ -2,7 +2,6 @@ use async_trait::async_trait;
 use chrono::Utc;
 use diesel::prelude::*;
 use diesel::result::{DatabaseErrorKind, Error as DieselError};
-use diesel_async::scoped_futures::ScopedFutureExt;
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use uuid::Uuid;
 
@@ -80,57 +79,54 @@ impl VoucherRepositoryPort for VoucherRepository {
         let mut conn = pool.get().await?;
 
         return conn
-            .transaction::<_, AppError, _>(|conn| {
-                async move {
-                    let new_id = Uuid::new_v4();
-                    let claim = PromotionCreationLedger::claim(
-                        conn,
-                        &creation,
-                        PromotionKind::Voucher,
-                        new_id,
-                        &request_body,
-                    )
-                    .await?;
+            .transaction(async move |conn| -> Result<_, AppError> {
+                let new_id = Uuid::new_v4();
+                let claim = PromotionCreationLedger::claim(
+                    conn,
+                    &creation,
+                    PromotionKind::Voucher,
+                    new_id,
+                    &request_body,
+                )
+                .await?;
 
-                    if let CreationClaim::Replay(earlier_id) = claim {
-                        let record = created(conn, earlier_id).await?;
-                        return Ok(CreateOutcome {
-                            record,
-                            replayed: true,
-                        });
-                    }
-
-                    let now = Utc::now();
-                    let requested_code = req.code.clone();
-                    let new_voucher = Voucher {
-                        id: new_id,
-                        code: req.code,
-                        title: req.title,
-                        discount_type: req.discount_type.as_str().to_string(),
-                        value: req.value,
-                        min_spend: req.min_spend,
-                        max_discount: req.max_discount,
-                        quota: req.quota,
-                        used_count: 0,
-                        active: true,
-                        expires_at: req.expires_at,
-                        created_at: now,
-                        updated_at: now,
-                        merchant_principal_id: owner,
-                    };
-
-                    let record = diesel::insert_into(vouchers)
-                        .values(&new_voucher)
-                        .get_result::<Voucher>(conn)
-                        .await
-                        .map_err(|error| return code_taken(error, &requested_code))?;
-
+                if let CreationClaim::Replay(earlier_id) = claim {
+                    let record = created(conn, earlier_id).await?;
                     return Ok(CreateOutcome {
                         record,
-                        replayed: false,
+                        replayed: true,
                     });
                 }
-                .scope_boxed()
+
+                let now = Utc::now();
+                let requested_code = req.code.clone();
+                let new_voucher = Voucher {
+                    id: new_id,
+                    code: req.code,
+                    title: req.title,
+                    discount_type: req.discount_type.as_str().to_string(),
+                    value: req.value,
+                    min_spend: req.min_spend,
+                    max_discount: req.max_discount,
+                    quota: req.quota,
+                    used_count: 0,
+                    active: true,
+                    expires_at: req.expires_at,
+                    created_at: now,
+                    updated_at: now,
+                    merchant_principal_id: owner,
+                };
+
+                let record = diesel::insert_into(vouchers)
+                    .values(&new_voucher)
+                    .get_result::<Voucher>(conn)
+                    .await
+                    .map_err(|error| return code_taken(error, &requested_code))?;
+
+                return Ok(CreateOutcome {
+                    record,
+                    replayed: false,
+                });
             })
             .await;
     }
