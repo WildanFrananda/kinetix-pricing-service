@@ -9,7 +9,7 @@
 # That feature is not stabilised before 1.85, so an older toolchain cannot even parse the
 # manifest — the build fails at dependency download, before compiling a line of this crate.
 
-FROM rust:1.99-slim-bookworm@sha256:86234e857a413004348b471d11a4ebe1aa92d2eae2b6b143cac68fd1ac3c48be AS build
+FROM rust:1.99-slim-bookworm@sha256:f2c004e3d2d8b547e8cf7ffbc29205385f4e71d23e53e4e383065db5e9f822cd AS build
 
 RUN apt-get update && apt-get install --no-install-recommends -y \
         libpq-dev pkg-config ca-certificates git \
